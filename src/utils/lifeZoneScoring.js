@@ -319,7 +319,7 @@ export function getTopAndLowZones(scoredLifeZones = []) {
     ? {
         ...lowCandidate,
         rankType: "low",
-        rankLabel: "보완 필요"
+        rankLabel: "비추천"
       }
     : null;
   const displayZones = lowZone ? [...recommendedZones, lowZone] : [...recommendedZones];

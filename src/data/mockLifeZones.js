@@ -284,8 +284,8 @@ export const mockLifeZones = [
       policeStations: 0
     },
     strengths: ["버스 접근성은 기본 수준 이상", "성장 가능성이 있는 생활권"],
-    weaknesses: ["체육 인프라와 공공안전 접근성 보완 필요"],
-    tags: ["성장형", "버스 접근", "보완 필요"]
+    weaknesses: ["체육 인프라와 공공안전 접근성 추가 확인 필요"],
+    tags: ["성장형", "버스 접근", "비추천"]
   },
   {
     id: "asan-dunpo",
@@ -325,7 +325,7 @@ export const mockLifeZones = [
       policeStations: 0
     },
     strengths: ["산업단지 접근 수요와 연계 가능"],
-    weaknesses: ["철도·문화·공공안전 접근성 보완 필요"],
+    weaknesses: ["철도·문화·공공안전 접근성 추가 확인 필요"],
     tags: ["외곽 생활권", "산업 연계", "인프라 보완"]
   }
 ];

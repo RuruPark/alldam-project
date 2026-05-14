@@ -62,7 +62,6 @@ const MAP_BOUNDS = {
 
 const state = {
   view: "preferences",
-  activeTab: "transport",
   activeMapFilter: "transport",
   preferences: { ...DEFAULT_PREFERENCES },
   scoredZones: [],
@@ -93,9 +92,6 @@ function render() {
 }
 
 function renderPreferenceScreen() {
-  const activeAxis = AXES.find((axis) => axis.id === state.activeTab) ?? AXES[0];
-  const activeImportance = state.preferences[activeAxis.preferenceKey];
-
   return `
     <main class="preference-screen">
       <section class="preference-workspace" aria-labelledby="preference-title">
@@ -105,62 +101,53 @@ function renderPreferenceScreen() {
           <p class="intro">중요하게 생각하는 생활 조건을 선택하면 천안·아산 생활권 적합도를 계산합니다.</p>
         </div>
 
-        <div class="axis-tabs" role="tablist" aria-label="추천 조건 카테고리">
-          ${AXES.map((axis) => `
-            <button
-              class="axis-tab ${axis.id === state.activeTab ? "is-active" : ""}"
-              id="tab-${axis.id}"
-              type="button"
-              role="tab"
-              aria-selected="${axis.id === state.activeTab}"
-              aria-controls="panel-${axis.id}"
-              data-tab="${axis.id}"
-            >
-              <span aria-hidden="true">${axis.icon}</span>
-              ${axis.tabLabel}
-            </button>
-          `).join("")}
+        <div class="preference-card-list">
+          ${AXES.map((axis) => renderPreferenceCard(axis)).join("")}
         </div>
-
-        <section
-          class="preference-panel"
-          id="panel-${activeAxis.id}"
-          role="tabpanel"
-          aria-labelledby="tab-${activeAxis.id}"
-        >
-          <div class="axis-heading">
-            <div>
-              <p class="axis-kicker">${activeAxis.axisLabel}</p>
-              <h2>${activeAxis.name}</h2>
-              <p>${activeAxis.description}</p>
-            </div>
-          </div>
-
-          <div class="importance-segments" role="radiogroup" aria-label="${activeAxis.name} 선택">
-            ${IMPORTANCE_OPTIONS.map((option) => `
-              <button
-                class="segment-button ${activeImportance === option.value ? "is-selected" : ""}"
-                type="button"
-                role="radio"
-                aria-checked="${activeImportance === option.value}"
-                aria-label="${activeAxis.tabLabel} ${option.description}"
-                data-importance="${option.value}"
-                data-axis="${activeAxis.id}"
-              >
-                ${option.label}
-              </button>
-            `).join("")}
-          </div>
-        </section>
       </section>
 
       <footer class="preference-cta" aria-label="생활권 점수 계산">
-        <p>입력한 중요도를 기준으로 추천 2개, 보완 필요 1개 생활권을 보여줍니다.</p>
+        <p>입력한 조건을 기준으로 추천 생활권을 보여줍니다.</p>
         <button class="primary-cta" type="button" data-calculate aria-label="생활권 점수 계산하기">
           생활권 점수 계산하기
         </button>
       </footer>
     </main>
+  `;
+}
+
+function renderPreferenceCard(axis) {
+  const activeImportance = state.preferences[axis.preferenceKey];
+
+  return `
+    <section class="preference-panel" aria-labelledby="preference-${axis.id}-title">
+      <div class="axis-heading">
+        <div>
+          <p class="axis-kicker">${axis.axisLabel}</p>
+          <h2 id="preference-${axis.id}-title">
+            <span aria-hidden="true">${axis.icon}</span>
+            ${axis.tabLabel}
+          </h2>
+          <p>${axis.description}</p>
+        </div>
+      </div>
+
+      <div class="importance-segments" role="radiogroup" aria-label="${axis.name} 선택">
+        ${IMPORTANCE_OPTIONS.map((option) => `
+          <button
+            class="segment-button ${activeImportance === option.value ? "is-selected" : ""}"
+            type="button"
+            role="radio"
+            aria-checked="${activeImportance === option.value}"
+            aria-label="${axis.tabLabel} ${option.description}"
+            data-importance="${option.value}"
+            data-axis="${axis.id}"
+          >
+            ${option.label}
+          </button>
+        `).join("")}
+      </div>
+    </section>
   `;
 }
 
@@ -196,7 +183,7 @@ function renderResultScreen() {
         </div>
 
         <div class="mock-map" role="region" aria-label="천안·아산 생활권 추천 위치 지도">
-          <p class="sr-only">추천 생활권과 보완 필요 생활권의 위치를 지도형 배경 위에 버튼 마커로 표시합니다.</p>
+          <p class="sr-only">추천 생활권과 비추천 생활권의 위치를 지도형 배경 위에 버튼 마커로 표시합니다.</p>
           <svg class="rail-overlay" viewBox="0 0 100 100" aria-hidden="true">
             <path class="rail-line" d="M10 84 C24 67 39 61 50 48 S72 27 90 15" />
             <text x="12" y="80">1호선 접근축</text>
@@ -234,7 +221,7 @@ function renderResultScreen() {
           </div>
         </section>
 
-        <div class="result-count">추천 ${bundle.recommendedZones.length}개 · 보완 필요 ${bundle.lowZone ? 1 : 0}개</div>
+        <div class="result-count">추천 ${bundle.recommendedZones.length}개 · 비추천 ${bundle.lowZone ? 1 : 0}개</div>
 
         <section class="zone-card-list" role="listbox" aria-label="생활권 결과 목록">
           ${displayZones.length === 0 ? renderPanelEmptyState() : displayZones.map((zone) => renderResultCard(zone, selectedZone?.id)).join("")}
@@ -248,7 +235,7 @@ function renderMapMarker(zone, selectedZoneId) {
   const position = getMapPosition(zone);
   const selected = zone.id === selectedZoneId;
   const markerClass = zone.rankType === "low" ? "is-low" : "is-recommended";
-  const label = zone.rankType === "low" ? "LOW 1" : `TOP ${zone.rank}`;
+  const label = zone.rankType === "low" ? "비추천" : `TOP ${zone.rank}`;
 
   return `
     <button
@@ -285,9 +272,9 @@ function renderResultCard(zone, selectedZoneId) {
           <h3>${zone.name}</h3>
           <p>${getZoneDescription(zone)}</p>
         </div>
-        <div class="score-badge">
-          <strong>${zone.totalScore.toFixed(1)}</strong>
-          <span>점</span>
+        <div class="grade-badge">
+          <strong>${zone.grade}</strong>
+          <span>생활권 등급</span>
         </div>
       </div>
 
@@ -303,7 +290,7 @@ function renderResultCard(zone, selectedZoneId) {
       </div>
 
       <div class="reason-block">
-        <strong>${zone.rankType === "low" ? "확인할 점" : "추천 이유"}</strong>
+        <strong>${zone.rankType === "low" ? "확인 사항" : "추천 이유"}</strong>
         <p>${zone.rankType === "low" ? getZoneWeaknesses(zone)[0] : getZoneStrengths(zone)[0]}</p>
       </div>
 
@@ -312,8 +299,8 @@ function renderResultCard(zone, selectedZoneId) {
       </div>
 
       <div class="strength-row">
-        <span>강점: ${getZoneStrengths(zone).slice(0, 2).join(" · ")}</span>
-        <span>부족한 점: ${getZoneWeaknesses(zone)[0]}</span>
+        <span>좋은 부분: ${getZoneStrengths(zone).slice(0, 2).join(" · ")}</span>
+        <span>확인 필요: ${getZoneWeaknesses(zone)[0]}</span>
       </div>
     </article>
   `;
@@ -323,7 +310,6 @@ function renderAxisScore(label, value) {
   return `
     <div class="axis-score">
       <span>${label}</span>
-      <strong>${value.toFixed(1)}</strong>
       <div class="mini-track"><span style="width: ${value}%"></span></div>
     </div>
   `;
@@ -348,29 +334,6 @@ function renderPanelEmptyState() {
 }
 
 function bindPreferenceEvents() {
-  appRoot.querySelectorAll("[data-tab]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.activeTab = button.dataset.tab;
-      render();
-    });
-    button.addEventListener("keydown", (event) => {
-      const direction = getHorizontalKeyDirection(event);
-      if (!direction && event.key !== "Home" && event.key !== "End") return;
-
-      event.preventDefault();
-      const currentIndex = AXES.findIndex((axis) => axis.id === state.activeTab);
-      let nextIndex = currentIndex;
-
-      if (event.key === "Home") nextIndex = 0;
-      else if (event.key === "End") nextIndex = AXES.length - 1;
-      else nextIndex = (currentIndex + direction + AXES.length) % AXES.length;
-
-      state.activeTab = AXES[nextIndex].id;
-      render();
-      focusAfterRender(`[data-tab="${state.activeTab}"]`);
-    });
-  });
-
   appRoot.querySelectorAll("[data-importance]").forEach((button) => {
     button.addEventListener("click", () => {
       const axis = AXES.find((axisItem) => axisItem.id === button.dataset.axis);
@@ -418,7 +381,6 @@ function bindPreferenceEvents() {
 function bindResultEvents() {
   appRoot.querySelector("[data-reset-preferences]")?.addEventListener("click", () => {
     state.view = "preferences";
-    state.activeTab = "transport";
     state.selectedZoneId = null;
     render();
   });
@@ -486,9 +448,10 @@ function getZoneWeaknesses(zone) {
 }
 
 function getZoneTags(zone) {
-  return Array.isArray(zone.tags) && zone.tags.length > 0
+  const tags = Array.isArray(zone.tags) && zone.tags.length > 0
     ? zone.tags
     : ["생활권 비교", "데이터 보완 예정"];
+  return tags;
 }
 
 function simplifyUserFacingReason(text) {
@@ -507,8 +470,8 @@ function simplifyUserFacingReason(text) {
     .replace(/철도 접근성과 체육 인프라 접근성이 안정적/g, "이동과 여가 생활의 균형이 좋은 편입니다")
     .replace(/넓은 면적 때문에 밀도 지표는 일부 낮게 산정될 수 있음/g, "생활권이 넓어 동네별 체감 차이가 있을 수 있습니다")
     .replace(/버스 접근성은 기본 수준 이상/g, "기본적인 대중교통 이용은 가능한 편입니다")
-    .replace(/체육 인프라와 공공안전 접근성 보완 필요/g, "여가와 안전 생활 조건은 추가 확인이 필요합니다")
-    .replace(/철도·문화·공공안전 접근성 보완 필요/g, "이동, 여가, 안전 생활 조건은 추가 확인이 필요합니다")
+    .replace(/체육 인프라와 공공안전 접근성 추가 확인 필요/g, "여가와 안전 생활 조건은 추가 확인이 필요합니다")
+    .replace(/철도·문화·공공안전 접근성 추가 확인 필요/g, "이동, 여가, 안전 생활 조건은 추가 확인이 필요합니다")
     .replace(/접근성/g, "이용 편의")
     .replace(/밀도/g, "분포")
     .replace(/지표/g, "조건");
