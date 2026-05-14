@@ -2,9 +2,7 @@ import { getLifeZoneDataset } from "../data/lifeZoneRepository.js";
 import {
   assignRelativeGrades,
   calculateLifeZoneScores,
-  getImportanceCoefficient,
-  getTopAndLowZones,
-  normalizePreferenceWeights
+  getTopAndLowZones
 } from "../utils/lifeZoneScoring.js";
 
 const DEFAULT_PREFERENCES = {
@@ -26,9 +24,7 @@ const AXES = [
     name: "대중교통 중요도",
     axisLabel: "교통 인프라 축",
     preferenceKey: "transportImportance",
-    weightKey: "transport",
-    description: "철도·버스 접근성과 이동 선택지를 기준으로 생활권 이동 편의성을 봅니다.",
-    indicators: ["철도 접근성", "버스 접근성", "교통 다양성"],
+    description: "출퇴근, 통학, 외출처럼 일상 이동 편의를 얼마나 중요하게 보는지 선택하세요.",
     icon: "🚉"
   },
   {
@@ -37,9 +33,7 @@ const AXES = [
     name: "문화·체육 중요도",
     axisLabel: "생활 편의 인프라 축",
     preferenceKey: "cultureSportsImportance",
-    weightKey: "living",
-    description: "도서관, 체육 인프라, 생활 편의 다양성을 함께 반영합니다.",
-    indicators: ["도서관 접근성", "체육 인프라 접근성", "생활편의 다양성"],
+    description: "문화생활과 운동, 여가를 누리기 좋은 생활 환경을 얼마나 중요하게 보는지 선택하세요.",
     icon: "📚"
   },
   {
@@ -48,9 +42,7 @@ const AXES = [
     name: "치안·의료 중요도",
     axisLabel: "치안·의료 인프라 축",
     preferenceKey: "safetyMedicalImportance",
-    weightKey: "safetyMedical",
-    description: "약국, 보안등, 안전비상벨, 119, 지구대·파출소 접근성을 종합합니다.",
-    indicators: ["약국 접근성", "보안등 밀도", "안전비상벨 밀도", "119안전센터 접근성", "지구대·파출소 접근성"],
+    description: "안전하게 생활하고 필요한 의료 도움을 받기 쉬운 환경을 얼마나 중요하게 보는지 선택하세요.",
     icon: "🚨"
   }
 ];
@@ -75,7 +67,6 @@ const state = {
   preferences: { ...DEFAULT_PREFERENCES },
   scoredZones: [],
   resultBundle: null,
-  preferenceWeights: null,
   selectedZoneId: null
 };
 
@@ -103,9 +94,7 @@ function render() {
 
 function renderPreferenceScreen() {
   const activeAxis = AXES.find((axis) => axis.id === state.activeTab) ?? AXES[0];
-  const weights = normalizePreferenceWeights(state.preferences);
   const activeImportance = state.preferences[activeAxis.preferenceKey];
-  const activeCoefficient = getImportanceCoefficient(activeImportance);
 
   return `
     <main class="preference-screen">
@@ -145,9 +134,6 @@ function renderPreferenceScreen() {
               <h2>${activeAxis.name}</h2>
               <p>${activeAxis.description}</p>
             </div>
-            <div class="coefficient-badge" aria-label="선택된 중요도 계수">
-              계수 <strong>${activeCoefficient.toFixed(1)}</strong>
-            </div>
           </div>
 
           <div class="importance-segments" role="radiogroup" aria-label="${activeAxis.name} 선택">
@@ -165,46 +151,6 @@ function renderPreferenceScreen() {
               </button>
             `).join("")}
           </div>
-
-          <div class="distribution-block" aria-label="정규화된 선호도 가중치 미리보기">
-            <div class="distribution-header">
-              <span>정규화된 가중치</span>
-              <strong>${formatPercent(weights[activeAxis.weightKey])}</strong>
-            </div>
-            <div class="distribution-bars">
-              ${AXES.map((axis) => `
-                <div class="distribution-item ${axis.id === activeAxis.id ? "is-current" : ""}">
-                  <div class="bar-track">
-                    <span class="bar-fill" style="height: ${Math.max(12, weights[axis.weightKey] * 100)}%"></span>
-                  </div>
-                  <span>${axis.tabLabel}</span>
-                  <strong>${formatPercent(weights[axis.weightKey])}</strong>
-                </div>
-              `).join("")}
-            </div>
-          </div>
-
-          <fieldset class="indicator-fieldset">
-            <legend>세부 지표 안내</legend>
-            <div class="indicator-grid">
-              ${activeAxis.indicators.map((indicator) => `
-                <label class="indicator-option">
-                  <input type="checkbox" checked disabled aria-label="${indicator} 반영 예정" />
-                  <span>${indicator}</span>
-                </label>
-              `).join("")}
-            </div>
-          </fieldset>
-        </section>
-
-        <section class="preference-summary" aria-label="현재 선택 요약">
-          ${AXES.map((axis) => `
-            <div class="summary-row">
-              <span>${axis.tabLabel}</span>
-              <strong>${getImportanceLabel(state.preferences[axis.preferenceKey])}</strong>
-              <small>${formatPercent(weights[axis.weightKey])}</small>
-            </div>
-          `).join("")}
         </section>
       </section>
 
@@ -226,7 +172,6 @@ function renderResultScreen() {
   };
   const displayZones = bundle.displayZones;
   const selectedZone = displayZones.find((zone) => zone.id === state.selectedZoneId) ?? displayZones[0] ?? null;
-  const weights = state.preferenceWeights ?? normalizePreferenceWeights(state.preferences);
 
   return `
     <main class="result-screen">
@@ -284,15 +229,6 @@ function renderResultScreen() {
               <div>
                 <span>${axis.tabLabel}</span>
                 <strong>${getImportanceLabel(state.preferences[axis.preferenceKey])}</strong>
-              </div>
-            `).join("")}
-          </div>
-          <div class="weight-readout" aria-label="정규화된 선호도 가중치">
-            ${AXES.map((axis) => `
-              <div class="weight-row">
-                <span>${axis.axisLabel.replace(" 축", "")}</span>
-                <strong>${formatPercent(weights[axis.weightKey])}</strong>
-                <div class="mini-track"><span style="width: ${weights[axis.weightKey] * 100}%"></span></div>
               </div>
             `).join("")}
           </div>
@@ -365,21 +301,6 @@ function renderResultCard(zone, selectedZoneId) {
         ${renderAxisScore("생활 편의", zone.axisScores.living)}
         ${renderAxisScore("치안·의료", zone.axisScores.safetyMedical)}
       </div>
-
-      <dl class="breakdown-list">
-        <div>
-          <dt>교통</dt>
-          <dd>철도 ${zone.scoreBreakdown.transport.railAccessibility} · 버스 ${zone.scoreBreakdown.transport.busAccessibility} · 다양성 ${zone.scoreBreakdown.transport.transportDiversity}</dd>
-        </div>
-        <div>
-          <dt>생활</dt>
-          <dd>도서관 ${zone.scoreBreakdown.living.libraryAccessibility} · 체육 ${zone.scoreBreakdown.living.sportsAccessibility} · 다양성 ${zone.scoreBreakdown.living.livingDiversity}</dd>
-        </div>
-        <div>
-          <dt>치안·의료</dt>
-          <dd>약국 ${zone.scoreBreakdown.safetyMedical.pharmacyAccessibility} · 보안등 ${zone.scoreBreakdown.safetyMedical.streetlightDensity} · 비상벨 ${zone.scoreBreakdown.safetyMedical.emergencyBellDensity} · 119 ${zone.scoreBreakdown.safetyMedical.fire119Accessibility} · 치안 ${zone.scoreBreakdown.safetyMedical.policeSubstationAccessibility}</dd>
-        </div>
-      </dl>
 
       <div class="reason-block">
         <strong>${zone.rankType === "low" ? "확인할 점" : "추천 이유"}</strong>
@@ -488,7 +409,6 @@ function bindPreferenceEvents() {
 
     state.scoredZones = gradedZones;
     state.resultBundle = resultBundle;
-    state.preferenceWeights = normalizePreferenceWeights(state.preferences);
     state.selectedZoneId = resultBundle.displayZones[0]?.id ?? null;
     state.view = "results";
     render();
@@ -500,7 +420,6 @@ function bindResultEvents() {
     state.view = "preferences";
     state.activeTab = "transport";
     state.selectedZoneId = null;
-    state.preferenceWeights = null;
     render();
   });
 
@@ -529,10 +448,6 @@ function getImportanceLabel(importance) {
   return IMPORTANCE_OPTIONS.find((option) => option.value === importance)?.label ?? "보통";
 }
 
-function formatPercent(value) {
-  return `${(value * 100).toFixed(1)}%`;
-}
-
 function getHorizontalKeyDirection(event) {
   if (event.key === "ArrowRight" || event.key === "ArrowDown") return 1;
   if (event.key === "ArrowLeft" || event.key === "ArrowUp") return -1;
@@ -555,25 +470,48 @@ function syncSelectedCardIntoView() {
 }
 
 function getZoneDescription(zone) {
-  return zone.description || `${zone.city} ${zone.eupMyeonDong} 생활권의 인프라 접근성을 비교했습니다.`;
+  return simplifyUserFacingReason(zone.description || `${zone.city} ${zone.eupMyeonDong} 생활권의 생활 조건을 비교했습니다.`);
 }
 
 function getZoneStrengths(zone) {
-  return Array.isArray(zone.strengths) && zone.strengths.length > 0
-    ? zone.strengths
-    : ["가중치 기준으로 비교 가능한 인프라 점수가 산정됨"];
+  const fallback = ["입력 조건에 잘 맞는 생활 환경을 갖춘 편입니다."];
+  const strengths = Array.isArray(zone.strengths) && zone.strengths.length > 0 ? zone.strengths : fallback;
+  return strengths.map(simplifyUserFacingReason);
 }
 
 function getZoneWeaknesses(zone) {
-  return Array.isArray(zone.weaknesses) && zone.weaknesses.length > 0
-    ? zone.weaknesses
-    : ["실제 공공데이터 적용 후 세부 보완 지표 확인 필요"];
+  const fallback = ["실제 생활 계획에 맞춰 추가 확인이 필요합니다."];
+  const weaknesses = Array.isArray(zone.weaknesses) && zone.weaknesses.length > 0 ? zone.weaknesses : fallback;
+  return weaknesses.map(simplifyUserFacingReason);
 }
 
 function getZoneTags(zone) {
   return Array.isArray(zone.tags) && zone.tags.length > 0
     ? zone.tags
     : ["생활권 비교", "데이터 보완 예정"];
+}
+
+function simplifyUserFacingReason(text) {
+  return String(text)
+    .replace(/버스·철도 접근성이 함께 확보됨/g, "대중교통 이용이 편리한 편입니다")
+    .replace(/도서관과 약국 접근성이 안정적/g, "일상생활에 필요한 시설을 이용하기 좋습니다")
+    .replace(/철도와 버스 접근성이 매우 좋음/g, "대중교통 선택지가 많은 편입니다")
+    .replace(/체육 인프라 접근성은 상대적으로 낮음/g, "운동·여가 생활은 추가 확인이 필요합니다")
+    .replace(/버스 접근성과 치안 시설 접근성이 좋음/g, "이동과 안전 생활 조건이 안정적인 편입니다")
+    .replace(/체육 인프라가 비교적 가까움/g, "운동·여가 생활을 누리기 좋은 편입니다")
+    .replace(/철도 접근성은 중심역 생활권보다 낮음/g, "광역 이동은 생활 동선에 맞춰 확인이 필요합니다")
+    .replace(/공공·작은도서관 접근성이 함께 확보됨/g, "문화생활을 누리기 좋은 편입니다")
+    .replace(/비상벨 밀도는 도심권 대비 낮음/g, "야간 생활 안전감은 현장 확인이 필요합니다")
+    .replace(/1호선 접근성이 높음/g, "1호선 이용이 편리한 편입니다")
+    .replace(/약국과 공공 안전시설 접근성이 우수/g, "생활 안전과 의료 이용 여건이 좋은 편입니다")
+    .replace(/철도 접근성과 체육 인프라 접근성이 안정적/g, "이동과 여가 생활의 균형이 좋은 편입니다")
+    .replace(/넓은 면적 때문에 밀도 지표는 일부 낮게 산정될 수 있음/g, "생활권이 넓어 동네별 체감 차이가 있을 수 있습니다")
+    .replace(/버스 접근성은 기본 수준 이상/g, "기본적인 대중교통 이용은 가능한 편입니다")
+    .replace(/체육 인프라와 공공안전 접근성 보완 필요/g, "여가와 안전 생활 조건은 추가 확인이 필요합니다")
+    .replace(/철도·문화·공공안전 접근성 보완 필요/g, "이동, 여가, 안전 생활 조건은 추가 확인이 필요합니다")
+    .replace(/접근성/g, "이용 편의")
+    .replace(/밀도/g, "분포")
+    .replace(/지표/g, "조건");
 }
 
 function getMapPosition(zone) {

@@ -177,21 +177,6 @@ p {
   font-size: 28px;
 }
 
-.coefficient-badge {
-  min-width: 104px;
-  padding: 12px;
-  border-radius: 8px;
-  color: var(--teal-dark);
-  background: var(--mint);
-  text-align: center;
-  font-weight: 800;
-}
-
-.coefficient-badge strong {
-  display: block;
-  font-size: 26px;
-}
-
 .importance-segments {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -214,135 +199,12 @@ p {
   background: var(--navy);
 }
 
-.distribution-block {
-  display: grid;
-  gap: 16px;
-  padding: 18px;
-  border: 1px solid #d7e8df;
-  border-radius: 8px;
-  background: #fbfffc;
-}
-
-.distribution-header,
-.summary-row,
 .grade-row,
 .card-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-}
-
-.distribution-header span {
-  color: var(--muted);
-  font-weight: 800;
-}
-
-.distribution-header strong {
-  color: var(--teal-dark);
-  font-size: 24px;
-}
-
-.distribution-bars {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: end;
-  min-height: 148px;
-  gap: 16px;
-}
-
-.distribution-item {
-  display: grid;
-  grid-template-rows: 110px auto auto;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 800;
-  text-align: center;
-}
-
-.bar-track {
-  display: flex;
-  align-items: end;
-  width: 100%;
-  height: 110px;
-  overflow: hidden;
-  border-radius: 8px;
-  background: #e9efec;
-}
-
-.bar-fill {
-  display: block;
-  width: 100%;
-  background: var(--amber);
-}
-
-.distribution-item.is-current .bar-fill {
-  background: var(--teal);
-}
-
-.distribution-item strong {
-  color: var(--ink);
-}
-
-.indicator-fieldset {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.indicator-fieldset legend {
-  margin-bottom: 12px;
-  color: var(--ink);
-  font-weight: 900;
-}
-
-.indicator-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.indicator-option {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 44px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f8faf9;
-  color: #3f4a53;
-  font-weight: 800;
-}
-
-.indicator-option input {
-  accent-color: var(--teal);
-}
-
-.preference-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.summary-row {
-  min-height: 66px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.78);
-}
-
-.summary-row span,
-.summary-row small {
-  color: var(--muted);
-  font-weight: 800;
-}
-
-.summary-row strong {
-  color: var(--teal-dark);
 }
 
 .preference-cta {
@@ -642,28 +504,14 @@ p {
   background: white;
 }
 
-.readout-grid span,
-.weight-row span {
+.readout-grid span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
 }
 
-.readout-grid strong,
-.weight-row strong {
+.readout-grid strong {
   color: var(--ink);
-}
-
-.weight-readout {
-  display: grid;
-  gap: 10px;
-}
-
-.weight-row {
-  display: grid;
-  grid-template-columns: minmax(122px, 1.2fr) 56px minmax(96px, 2fr);
-  align-items: center;
-  gap: 8px;
 }
 
 .mini-track {
@@ -768,7 +616,6 @@ p {
 }
 
 .axis-score-list,
-.breakdown-list,
 .strength-row {
   display: grid;
   gap: 8px;
@@ -786,28 +633,6 @@ p {
 
 .axis-score strong {
   color: var(--ink);
-}
-
-.breakdown-list {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.breakdown-list div {
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  gap: 8px;
-}
-
-.breakdown-list dt {
-  color: var(--ink);
-  font-weight: 900;
-}
-
-.breakdown-list dd {
-  margin: 0;
 }
 
 .reason-block {
@@ -918,15 +743,12 @@ p {
 
   .axis-tabs,
   .importance-segments,
-  .indicator-grid,
-  .preference-summary,
   .readout-grid {
     grid-template-columns: 1fr;
   }
 
   .axis-heading,
   .preference-cta,
-  .distribution-header,
   .card-title-row {
     align-items: stretch;
     flex-direction: column;
@@ -945,16 +767,8 @@ p {
     width: 100%;
   }
 
-  .distribution-bars {
-    gap: 9px;
-  }
-
   .result-panel {
     padding: 16px;
-  }
-
-  .weight-row {
-    grid-template-columns: minmax(104px, 1.2fr) 48px minmax(82px, 2fr);
   }
 
   .axis-score {
