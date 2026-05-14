@@ -5,7 +5,7 @@ node_modules/
 *.log
 dist/
 build/
-data/
+/data/
 *api key*.txt
 *API key*.txt
 *apikey*.txt
