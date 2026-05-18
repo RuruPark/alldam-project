@@ -65,11 +65,55 @@ node scripts\verify-static-app.mjs
 
 Client Secret은 프론트엔드 코드에 포함하면 안 됩니다. 이후 네이버 Directions 5 API처럼 secret이 필요한 호출은 별도 서버 또는 안전한 백엔드 경유 방식으로 붙입니다.
 
+## 지도 API 동작 방식
+
+네이버 지도 Client ID가 없으면 기존 CSS/SVG 기반 fallback 지도 UI가 표시됩니다. 이 상태에서도 직장 마커, 생활권 마커, 직장과 생활권을 잇는 보조 연결선은 계속 표시됩니다.
+
+정적 배포 환경에서 실제 네이버 지도를 사용하려면 브라우저에서 `window.__APP_CONFIG__.NAVER_MAP_CLIENT_ID` 또는 `window.__APP_CONFIG__.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID` 값을 제공해야 합니다. `.env.local`의 값은 Next.js처럼 자동 주입되지 않습니다.
+
+GitHub Pages에서 실제 네이버 지도를 보려면 프로젝트 루트의 `public-config.js`에 발급받은 Client ID를 직접 입력합니다.
+
+```js
+window.__APP_CONFIG__ = {
+  NAVER_MAP_CLIENT_ID: "여기에_실제_Client_ID_입력"
+};
+```
+
+`public-config.js`에는 Client Secret을 절대 넣지 않습니다. 현재 파일에는 placeholder만 들어 있으며, placeholder 상태이거나 Client ID가 비어 있으면 기존 fallback 지도로 동작합니다.
+
+네이버 Maps Application의 Web 서비스 URL에는 호스트 도메인인 `http://rurupark.github.io`를 등록합니다. GitHub Pages 실제 접속 주소는 보통 `https://rurupark.github.io/alldam-project/` 형식이지만, 네이버 Application에는 경로가 포함된 주소가 아니라 호스트 도메인을 등록합니다. Dynamic Map은 네이버 Maps Application에서 선택되어 있어야 합니다.
+
+GitHub Pages 같은 정적 배포에서는 Client Secret을 사용할 수 없습니다. `NAVER_MAP_CLIENT_SECRET`은 프론트엔드 코드에 노출하지 말고, 추후 Directions 5 API를 연결할 때 별도 백엔드 또는 서버리스 프록시에서만 사용해야 합니다.
+
+이번 단계에서는 네이버 Directions 5 API를 호출하지 않습니다. 지도 위 연결선은 실제 길찾기 경로가 아니라 직장 좌표와 생활권 좌표를 잇는 보조선입니다.
+
+현재 읍면동 경계는 국토교통부 센서스경계 행정동경계 SHP를 WGS84(EPSG:4326) GeoJSON으로 변환한 뒤 천안·아산 지역만 추출한 실제 행정동경계 데이터입니다. 네이버 지도 Client ID가 있으면 실제 네이버 지도 위에 행정동 경계를 함께 표시할 수 있고, Client ID가 없으면 fallback 지도로 계속 동작합니다.
+
+실제 VWorld GeoJSON을 확보하면 `scripts/prepare-vworld-boundaries.mjs`로 천안·아산 읍면동만 추출해 `src/data/cheonanAsanEmdBoundaries.js`를 실제 경계 데이터로 교체할 수 있습니다.
+
+```powershell
+node scripts\prepare-vworld-boundaries.mjs --input .\data\map\vworld_emd.geojson --output .\src\data\cheonanAsanEmdBoundaries.js
+```
+
+SHP 원본은 이 스크립트에서 직접 처리하지 않습니다. QGIS, mapshaper, ogr2ogr 등으로 GeoJSON FeatureCollection으로 먼저 변환한 뒤 입력합니다. 변환 결과가 실제 경계 데이터이면 `metadata.isSample`은 `false`가 됩니다. 통근시간은 아직 네이버 Directions 5 결과가 아니라 거리 기반 fallback 추정값입니다.
+
+국토교통부 센서스경계 행정동경계 원본은 `data/행정동경계`에 보관합니다. 현재 확인된 원본은 `BND_ADM_DONG_PG.shp`, `.dbf`, `.shx`, `.prj`, `.cpg`로 구성된 SHP 묶음이며 `.prj` 기준 KGD2002 Central Belt 2010 투영좌표계입니다. 변환 결과는 `data/행정동경계/converted/admin_emd_4326.geojson`에 저장했습니다.
+
+WGS84 GeoJSON으로 변환한 뒤에는 범용 스크립트로 실제 행정동경계를 적용합니다.
+
+```powershell
+node scripts\prepare-admin-boundaries.mjs --input .\data\행정동경계\converted\admin_emd_4326.geojson --output .\src\data\cheonanAsanEmdBoundaries.js --source molit-census-boundary
+```
+
+변환 성공 후 `src/data/cheonanAsanEmdBoundaries.js`의 `metadata.source`는 `molit-census-boundary`, `metadata.isSample`은 `false`입니다. 좌표계가 확실하지 않거나 천안·아산 feature를 찾지 못하면 스크립트는 기존 `src/data/cheonanAsanEmdBoundaries.js`를 덮어쓰지 않습니다.
+
 ## 데이터 위치
 
 루트의 `data/` 폴더는 Git에서 제외되어 원본/전처리 작업 파일 보관용으로 사용합니다.
 
 웹앱에서 직접 import해서 사용할 공개 데이터는 `src/data/` 아래에 둡니다. 예를 들어 읍면동 중심좌표 데이터는 `src/data/cheonanAsanEmdCenters.js`에서 관리합니다.
+
+VWorld 원본 GeoJSON이나 SHP 묶음은 `data/` 또는 `data/map/`에 보관해도 됩니다. 다만 브라우저 앱에서 import하는 최종 JS 데이터는 항상 `src/data/`에 있어야 합니다.
 
 ## 공유 주의
 

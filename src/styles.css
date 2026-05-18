@@ -403,12 +403,167 @@ p {
 .mock-map {
   position: absolute;
   inset: 0;
+  z-index: 0;
   overflow: hidden;
   background:
     linear-gradient(90deg, rgba(20, 125, 114, 0.13) 1px, transparent 1px),
     linear-gradient(0deg, rgba(20, 125, 114, 0.1) 1px, transparent 1px),
     linear-gradient(135deg, #dcebe1 0%, #f7f1d8 52%, #dfeaf0 100%);
   background-size: 72px 72px, 72px 72px, auto;
+}
+
+.mock-map.is-map-fallback-hidden {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.naver-map-shell {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  background: #e5ece8;
+}
+
+.naver-map-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+}
+
+.naver-map-shell.is-loading::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  content: "Naver Maps loading";
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 28px rgba(31, 45, 52, 0.16);
+  font-size: 13px;
+  font-weight: 900;
+  transform: translate(-50%, -50%);
+}
+
+.map-provider-badge,
+.map-route-note,
+.map-boundary-note {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 8px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 12px 28px rgba(31, 45, 52, 0.12);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.map-provider-badge {
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  gap: 2px;
+  max-width: min(280px, calc(100% - 36px));
+  padding: 9px 11px;
+}
+
+.map-provider-badge.is-live {
+  color: white;
+  background: rgba(20, 125, 114, 0.92);
+}
+
+.map-provider-badge.is-fallback {
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.map-provider-badge span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.map-provider-badge.is-live span {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.map-route-note {
+  left: 18px;
+  bottom: 18px;
+  max-width: min(340px, calc(100% - 36px));
+  margin: 0;
+  padding: 9px 11px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.map-boundary-note {
+  top: 86px;
+  left: 18px;
+  max-width: min(320px, calc(100% - 36px));
+  margin: 0;
+  padding: 9px 11px;
+  color: #4f625b;
+  background: rgba(248, 250, 249, 0.92);
+  font-weight: 800;
+}
+
+.naver-workplace-marker,
+.naver-lifezone-marker {
+  display: grid;
+  gap: 3px;
+  min-width: 82px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: center;
+  cursor: pointer;
+}
+
+.naver-workplace-marker span,
+.naver-lifezone-marker span {
+  justify-self: center;
+  min-width: 56px;
+  padding: 7px 9px;
+  border: 2px solid white;
+  border-radius: 8px;
+  color: white;
+  background: var(--teal);
+  box-shadow: 0 14px 26px rgba(31, 45, 52, 0.24);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.naver-workplace-marker span {
+  background: var(--navy);
+}
+
+.naver-lifezone-marker.is-low span {
+  background: var(--danger);
+}
+
+.naver-lifezone-marker.is-selected span {
+  outline: 4px solid rgba(230, 167, 0, 0.32);
+  transform: translateY(-3px);
+}
+
+.naver-workplace-marker strong,
+.naver-lifezone-marker strong {
+  justify-self: center;
+  max-width: 120px;
+  padding: 4px 7px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+  box-shadow: 0 9px 18px rgba(31, 45, 52, 0.12);
 }
 
 .mock-map::before {
@@ -973,6 +1128,10 @@ p {
 
   .map-filter {
     flex: 1;
+  }
+
+  .map-boundary-note {
+    top: 136px;
   }
 }
 

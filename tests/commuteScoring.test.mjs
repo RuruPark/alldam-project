@@ -1,81 +1,146 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mockLifeZones } from "../src/data/mockLifeZones.js";
-import { cheonanAsanEmdCenters } from "../src/data/cheonanAsanEmdCenters.js";
 import {
-  applyCommuteToLifeZoneScores,
-  applyCommuteToScore,
   calculateCommuteFitScore,
-  calculateHaversineDistanceKm,
-  estimateCommuteTimes,
-  getActualCommuteMinutes,
-  getCommutePolicy
+  calculateFinalScoreWithCommute,
+  getCommuteWeightConfig,
+  selectActualCommuteMinutes
 } from "../src/utils/commuteScoring.js";
-import {
-  assignRelativeGrades,
-  calculateLifeZoneScores,
-  getTopAndLowZones
-} from "../src/utils/lifeZoneScoring.js";
+import { applyCommuteScoringToLifeZones } from "../src/utils/lifeZoneCommuteScoring.js";
 
-const workplace = cheonanAsanEmdCenters.find((center) => center.emdName === "불당동");
-const zone = mockLifeZones.find((lifeZone) => lifeZone.id === "asan-baebang");
-
-test("haversine distance returns a finite positive number", () => {
-  const distance = calculateHaversineDistanceKm(workplace, zone);
-
-  assert.equal(Number.isFinite(distance), true);
-  assert.ok(distance > 0);
-});
-
-test("estimated commute times are positive for car, transit, and walk", () => {
-  const times = estimateCommuteTimes(workplace, zone);
-
-  assert.ok(times.car > 0);
-  assert.ok(times.transit > 0);
-  assert.ok(times.walk > 0);
-});
-
-test("unknown commute mode picks the shorter of car and transit", () => {
-  const times = { car: 32, transit: 45, walk: 180 };
-
-  assert.equal(getActualCommuteMinutes(times, "unknown"), 32);
-});
-
-test("commute importance policies use the requested weights", () => {
-  assert.equal(getCommutePolicy("low").weight, 0.1);
-  assert.equal(getCommutePolicy("medium").weight, 0.2);
-  assert.equal(getCommutePolicy("high").weight, 0.3);
-});
-
-test("high commute importance still keeps at least 70 percent of base score", () => {
-  const finalScore = applyCommuteToScore(80, 40, "high");
-
-  assert.equal(finalScore, 68);
-});
-
-test("commute fit and final score stay within the 0 to 100 range", () => {
-  const fitScore = calculateCommuteFitScore(180, 30, "high");
-  const finalScore = applyCommuteToScore(95, fitScore, "high");
-
-  assert.ok(fitScore >= 0 && fitScore <= 100);
-  assert.ok(finalScore >= 0 && finalScore <= 100);
-});
-
-test("commute-adjusted results still return top 2 and low 1", () => {
-  const baseScored = calculateLifeZoneScores(mockLifeZones, {
-    transportImportance: "medium",
-    cultureSportsImportance: "medium",
-    safetyMedicalImportance: "medium"
-  });
-  const commuteScored = applyCommuteToLifeZoneScores(baseScored, workplace, {
-    workplaceEmdCode: workplace.emdCode,
+test("calculateCommuteFitScore returns 100 when actual commute is within target", () => {
+  assert.equal(calculateCommuteFitScore({
     targetMinutes: 40,
-    commuteImportance: "medium",
-    commuteMode: "unknown"
-  });
-  const result = getTopAndLowZones(assignRelativeGrades(commuteScored));
+    actualMinutes: 35,
+    commuteImportance: "보통"
+  }), 100);
+});
 
-  assert.equal(result.recommendedZones.length, 2);
-  assert.equal(Boolean(result.lowZone), true);
-  assert.equal(result.displayZones.length, 3);
+test("calculateCommuteFitScore gradually reduces the score when actual commute exceeds target", () => {
+  assert.equal(calculateCommuteFitScore({
+    targetMinutes: 40,
+    actualMinutes: 50,
+    commuteImportance: "보통"
+  }), 90);
+});
+
+test("calculateCommuteFitScore respects minimum scores by commute importance", () => {
+  assert.equal(calculateCommuteFitScore({
+    targetMinutes: 30,
+    actualMinutes: 240,
+    commuteImportance: "낮음"
+  }), 75);
+  assert.equal(calculateCommuteFitScore({
+    targetMinutes: 30,
+    actualMinutes: 240,
+    commuteImportance: "보통"
+  }), 60);
+  assert.equal(calculateCommuteFitScore({
+    targetMinutes: 30,
+    actualMinutes: 240,
+    commuteImportance: "높음"
+  }), 45);
+});
+
+test("calculateCommuteFitScore falls back safely for invalid inputs", () => {
+  assert.equal(calculateCommuteFitScore({
+    targetMinutes: 0,
+    actualMinutes: 40,
+    commuteImportance: "보통"
+  }), 100);
+  assert.equal(calculateCommuteFitScore({
+    targetMinutes: 40,
+    actualMinutes: null,
+    commuteImportance: "높음"
+  }), 45);
+});
+
+test("calculateFinalScoreWithCommute applies low, medium, and high commute weights", () => {
+  assert.equal(calculateFinalScoreWithCommute({
+    baseScore: 80,
+    commuteFitScore: 40,
+    commuteImportance: "낮음"
+  }), 76);
+  assert.equal(calculateFinalScoreWithCommute({
+    baseScore: 80,
+    commuteFitScore: 40,
+    commuteImportance: "보통"
+  }), 72);
+  assert.equal(calculateFinalScoreWithCommute({
+    baseScore: 80,
+    commuteFitScore: 40,
+    commuteImportance: "높음"
+  }), 68);
+});
+
+test("commute weight does not exceed 0.30", () => {
+  assert.equal(getCommuteWeightConfig("높음").commuteWeight, 0.3);
+  assert.ok(getCommuteWeightConfig("높음").commuteWeight <= 0.3);
+  assert.equal(getCommuteWeightConfig("알 수 없음").commuteWeight, 0.2);
+});
+
+test("selectActualCommuteMinutes uses the selected transport mode", () => {
+  const commuteTimes = {
+    car: 28,
+    transit: 42,
+    walk: 85
+  };
+
+  assert.equal(selectActualCommuteMinutes({ commuteTimes, transportMode: "자동차" }), 28);
+  assert.equal(selectActualCommuteMinutes({ commuteTimes, transportMode: "대중교통" }), 42);
+  assert.equal(selectActualCommuteMinutes({ commuteTimes, transportMode: "도보" }), 85);
+  assert.equal(selectActualCommuteMinutes({ commuteTimes, transportMode: "아직 모름" }), 28);
+});
+
+test("selectActualCommuteMinutes falls back to the shortest available value", () => {
+  assert.equal(selectActualCommuteMinutes({
+    commuteTimes: { transit: 37, walk: 72 },
+    transportMode: "자동차"
+  }), 37);
+  assert.equal(selectActualCommuteMinutes({
+    commuteTimes: {},
+    transportMode: "아직 모름"
+  }), null);
+});
+
+test("applyCommuteScoringToLifeZones adds commute scoring fields and sorts by final score", () => {
+  const workplace = {
+    emdCode: "WORK",
+    city: "천안시",
+    district: "서북구",
+    emdName: "불당동",
+    lat: 36.8154,
+    lng: 127.1085
+  };
+  const lifeZones = [
+    {
+      id: "near",
+      centerLat: 36.8154,
+      centerLng: 127.1085,
+      totalScore: 90
+    },
+    {
+      id: "far",
+      centerLat: 36.9294,
+      centerLng: 127.0382,
+      totalScore: 70
+    }
+  ];
+  const result = applyCommuteScoringToLifeZones({
+    lifeZones,
+    workplace,
+    targetMinutes: 40,
+    commuteImportance: "보통",
+    transportMode: "자동차"
+  });
+
+  assert.equal(result.length, 2);
+  assert.equal(result[0].id, "near");
+  assert.ok(result[0].finalScoreWithCommute >= result[1].finalScoreWithCommute);
+  assert.equal(result[0].totalScore, 90);
+  assert.equal(typeof result[0].commuteTimes.car, "number");
+  assert.equal(result[0].commuteTimes.isFallback, true);
+  assert.equal(result[0].commuteTimes.provider, "distance-fallback");
+  assert.equal(typeof result[0].commuteFitScore, "number");
+  assert.equal(typeof result[0].finalScoreWithCommute, "number");
 });

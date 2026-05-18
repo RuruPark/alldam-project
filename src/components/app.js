@@ -1,4 +1,7 @@
 import {
+  cheonanAsanEmdBoundaryGeoJson
+} from "../data/cheonanAsanEmdBoundaries.js";
+import {
   findEmdCenter,
   getDistrictsByCity,
   getEmdsBySelection,
@@ -15,6 +18,7 @@ import {
   COMMUTE_MODE_LABELS,
   normalizeTargetMinutes
 } from "../utils/commuteScoring.js";
+import { NaverMapView } from "./NaverMapView.js";
 
 const DEFAULT_PREFERENCES = {
   transportImportance: "medium",
@@ -119,6 +123,7 @@ function render() {
   appRoot.innerHTML = state.view === "results" ? renderResultScreen() : renderPreferenceScreen();
   if (state.view === "results") {
     bindResultEvents();
+    initializeOptionalNaverMap();
     syncSelectedCardIntoView();
   } else {
     bindPreferenceEvents();
@@ -709,6 +714,144 @@ function bindTargetMinuteInputs() {
   rangeInput?.addEventListener("input", (event) => updateTarget(event.target.value));
   numberInput?.addEventListener("input", (event) => updateTarget(event.target.value));
   numberInput?.addEventListener("blur", (event) => updateTarget(event.target.value));
+}
+
+function initializeOptionalNaverMap() {
+  const fallbackMap = appRoot?.querySelector(".mock-map");
+  if (!fallbackMap) return;
+
+  const boundaryDisplay = getBoundaryDisplayText();
+  const clientId = getNaverMapClientId();
+  if (!clientId) {
+    addMapStatusBadge(fallbackMap, "fallback", "기본 지도 표시 중", "실제 지도 연결 전에도 위치 비교가 가능합니다.");
+    addMapBoundaryNote(fallbackMap, boundaryDisplay.fallbackNote);
+    addMapRouteNote(fallbackMap);
+    return;
+  }
+
+  const selectedWorkplace = getSelectedWorkplace();
+  const displayZones = state.resultBundle?.displayZones ?? [];
+  const mapShell = document.createElement("div");
+  mapShell.className = "naver-map-shell is-loading";
+  mapShell.innerHTML = `
+    <div class="naver-map-canvas" data-naver-map-canvas role="region" aria-label="Naver map"></div>
+    <div class="map-provider-badge is-live" data-map-provider-badge>
+      <strong>Naver Maps</strong>
+      <span>${boundaryDisplay.badge}</span>
+    </div>
+    <p class="map-boundary-note">${boundaryDisplay.liveNote}</p>
+    <p class="map-route-note">지도 연결선은 실제 길찾기 경로가 아니라 위치 비교용 선입니다.</p>
+  `;
+  fallbackMap.insertAdjacentElement("beforebegin", mapShell);
+
+  NaverMapView({
+    clientId,
+    container: mapShell.querySelector("[data-naver-map-canvas]"),
+    workplace: selectedWorkplace,
+    results: displayZones,
+    selectedLifeZoneId: state.selectedZoneId,
+    onSelectLifeZone: (lifeZoneId) => {
+      state.selectedZoneId = lifeZoneId;
+      render();
+    },
+    onError: (error) => showFallbackMapAfterNaverError(mapShell, fallbackMap, error)
+  }).then(() => {
+    if (!mapShell.isConnected) return;
+
+    mapShell.classList.remove("is-loading");
+    setMapProviderBadge(mapShell.querySelector("[data-map-provider-badge]"), "Naver Maps", boundaryDisplay.badge);
+    fallbackMap.classList.add("is-map-fallback-hidden");
+  }).catch(() => {
+    // Fallback is handled in showFallbackMapAfterNaverError.
+  });
+}
+
+function showFallbackMapAfterNaverError(mapShell, fallbackMap, error) {
+  console.warn("Naver Maps failed to load; showing fallback map.", error);
+  mapShell.remove();
+  fallbackMap.classList.remove("is-map-fallback-hidden");
+  addMapStatusBadge(fallbackMap, "fallback", "기본 지도 표시 중", "실제 지도를 불러오지 못해 위치 비교 지도로 표시합니다.");
+  addMapBoundaryNote(fallbackMap, getBoundaryDisplayText().fallbackNote);
+  addMapRouteNote(fallbackMap);
+}
+
+function getBoundaryDisplayText() {
+  const metadata = cheonanAsanEmdBoundaryGeoJson.metadata ?? {};
+
+  if (metadata.isSample === false) {
+    return {
+      badge: "행정동 경계",
+      liveNote: "국토교통부 센서스경계 행정동경계를 기준으로 표시합니다.",
+      fallbackNote: "행정동 경계는 실제 지도 모드에서 표시됩니다."
+    };
+  }
+
+  return {
+    badge: "시연용 읍면동 경계",
+    liveNote: "실제 행정경계가 아닌 시연용 경계입니다.",
+    fallbackNote: "읍면동 경계는 실제 지도 모드에서 표시됩니다. 현재 경계 데이터는 시연용입니다."
+  };
+}
+
+function addMapStatusBadge(mapElement, mode, title, detail) {
+  if (mapElement.querySelector("[data-map-status-badge]")) return;
+
+  const badge = document.createElement("div");
+  badge.className = `map-provider-badge is-${mode}`;
+  badge.dataset.mapStatusBadge = "";
+  const titleElement = document.createElement("strong");
+  const detailElement = document.createElement("span");
+  titleElement.textContent = title;
+  detailElement.textContent = detail;
+  badge.append(titleElement, detailElement);
+  mapElement.appendChild(badge);
+}
+
+function setMapProviderBadge(badge, title, detail) {
+  if (!badge) return;
+
+  const titleElement = document.createElement("strong");
+  const detailElement = document.createElement("span");
+  titleElement.textContent = title;
+  detailElement.textContent = detail;
+  badge.replaceChildren(titleElement, detailElement);
+}
+
+function addMapBoundaryNote(mapElement, message) {
+  if (mapElement.querySelector("[data-map-boundary-note]")) return;
+
+  const note = document.createElement("p");
+  note.className = "map-boundary-note";
+  note.dataset.mapBoundaryNote = "";
+  note.textContent = message;
+  mapElement.appendChild(note);
+}
+
+function addMapRouteNote(mapElement) {
+  if (mapElement.querySelector("[data-map-route-note]")) return;
+
+  const note = document.createElement("p");
+  note.className = "map-route-note";
+  note.dataset.mapRouteNote = "";
+  note.textContent = "지도 연결선은 실제 길찾기 경로가 아니라 위치 비교용 선입니다.";
+  mapElement.appendChild(note);
+}
+
+function getNaverMapClientId() {
+  const config = window.__APP_CONFIG__ ?? {};
+  const clientId = String(config.NAVER_MAP_CLIENT_ID ?? config.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID ?? "").trim();
+
+  return isValidNaverMapClientId(clientId) ? clientId : "";
+}
+
+function isValidNaverMapClientId(clientId) {
+  const invalidClientIds = new Set([
+    "",
+    "발급받은_Client_ID를_여기에_직접_입력하세요",
+    "발급받은_Client_ID"
+  ]);
+
+  return !invalidClientIds.has(String(clientId ?? "").trim());
 }
 
 function bindCommuteOptionButtons() {

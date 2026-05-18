@@ -168,3 +168,28 @@ totalScore =
 - 교통 API 연계
 - LLM 기반 추천 사유 설명 생성
 - B2G/B2B 확장
+
+## 8. 통근 점수 결합 방식
+
+- 통근 점수는 고정 구간표가 아니라 사용자가 입력한 희망 통근시간을 기준으로 계산한다.
+- 실제 또는 추정 통근시간이 희망 통근시간 이내이면 통근 적합도는 100점이다.
+- 희망 통근시간을 초과하면 `max(0, actualMinutes - targetMinutes) / targetMinutes` 비율에 따라 완만하게 감점한다.
+- 통근 중요도는 낮음, 보통, 높음으로 나뉘며 반영 비중은 각각 10%, 20%, 30%다.
+- 통근 중요도가 높아도 기존 교통, 생활 편의, 치안·의료 인프라 3축 점수는 최소 70% 이상 반영된다.
+- API 연동 전에는 `src/utils/commuteEstimator.js`의 거리 기반 fallback 통근시간을 사용한다.
+- 통근 점수 결합 단계에서는 지도 API 호출, 네이버 Directions 5 API 호출, VWorld GeoJSON 표시는 수행하지 않았다.
+
+## 9. 읍면동 경계 데이터 적용 방식
+
+- 현재 경계 데이터는 `src/data/cheonanAsanEmdBoundaries.js`에 둔 국토교통부 센서스경계 기반 실제 행정동경계 데이터다.
+- `metadata.source`는 `molit-census-boundary`, `metadata.isSample`은 `false`다.
+- 실제 VWorld GeoJSON을 확보하면 `scripts/prepare-vworld-boundaries.mjs`로 천안·아산 읍면동만 추출해 같은 FeatureCollection 구조로 변환할 수 있다.
+- 국토교통부 센서스경계 행정동경계 GeoJSON은 `scripts/prepare-admin-boundaries.mjs`로 같은 구조로 변환할 수 있다.
+- 현재 `data/행정동경계`의 원본은 SHP 묶음이며 `.prj` 기준 KGD2002 Central Belt 2010 투영좌표계다. 네이버 지도 적용을 위해 WGS84(EPSG:4326) GeoJSON으로 변환했고, 변환 결과는 `data/행정동경계/converted/admin_emd_4326.geojson`에 둔다.
+- 루트 `data/` 폴더는 Git에서 제외될 수 있으므로 VWorld 원본 보관용으로 적합하고, 웹앱이 import하는 최종 JS 데이터는 `src/data/cheonanAsanEmdBoundaries.js`에 둔다.
+- SHP 파일은 스크립트에서 직접 처리하지 않고, 먼저 GeoJSON FeatureCollection으로 변환한 뒤 입력한다.
+- 실제 경계 데이터로 변환되면 `metadata.isSample`은 `false`가 된다.
+- 변환 실패, 좌표계 불확실, 천안·아산 feature 미식별 상태에서는 기존 샘플 경계 데이터를 유지한다.
+- 네이버 지도 Client ID가 있으면 지도 위에 직장 읍면동 경계와 매칭되는 생활권 경계를 표시한다.
+- Client ID가 없거나 지도 로딩에 실패하면 기존 fallback 지도 UI를 유지한다.
+- 이번 단계에서도 Directions 5 API, 대중교통 API, 백엔드 서버는 추가하지 않는다.
