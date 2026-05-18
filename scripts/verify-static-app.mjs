@@ -10,10 +10,15 @@ const requiredFiles = [
   "index.html",
   "src/main.js",
   "src/components/app.js",
+  "src/data/cheonanAsanEmdCenters.js",
   "src/data/mockLifeZones.js",
+  "src/utils/geoDistance.js",
+  "src/utils/commuteEstimator.js",
+  "src/utils/commuteScoring.js",
   "src/utils/lifeZoneScoring.js",
   "src/types/lifeZone.ts",
-  "docs/data-scoring-plan.md"
+  "docs/data-scoring-plan.md",
+  ".env.example"
 ];
 
 await Promise.all(requiredFiles.map((file) => readFile(new URL(`../${file}`, import.meta.url), "utf8")));
@@ -30,7 +35,7 @@ if (mockLifeZones.length < 8) {
 }
 
 if (result.recommendedZones.length !== 2 || !result.lowZone || result.displayZones.length !== 3) {
-  throw new Error("결과는 추천 2개와 보완 필요 1개로 구성되어야 합니다.");
+  throw new Error("결과는 추천 2개와 비추천 1개로 구성되어야 합니다.");
 }
 
 console.log("Static app verification passed.");

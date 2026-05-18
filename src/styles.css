@@ -43,7 +43,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -53,7 +54,7 @@ button {
 
 .preference-screen {
   min-height: 100vh;
-  padding: 48px 18px 118px;
+  padding: 48px 18px 172px;
 }
 
 .preference-workspace {
@@ -65,6 +66,22 @@ button {
   display: grid;
   gap: 10px;
   margin-bottom: 26px;
+}
+
+.preference-section {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.section-heading {
+  display: grid;
+  gap: 6px;
+}
+
+.section-heading h2 {
+  margin-bottom: 0;
+  font-size: 24px;
 }
 
 .eyebrow {
@@ -92,6 +109,7 @@ p {
 
 .intro,
 .axis-heading p,
+.section-heading p,
 .panel-header p {
   color: var(--muted);
   line-height: 1.65;
@@ -132,6 +150,16 @@ p {
   box-shadow: var(--shadow);
 }
 
+.commute-panel {
+  display: grid;
+  gap: 18px;
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfb;
+  box-shadow: var(--shadow);
+}
+
 .axis-heading {
   display: flex;
   align-items: flex-start;
@@ -146,7 +174,8 @@ p {
   font-weight: 900;
 }
 
-.axis-heading h2 {
+.axis-heading h2,
+.axis-heading h3 {
   margin-bottom: 8px;
   font-size: 28px;
 }
@@ -154,6 +183,20 @@ p {
 .importance-segments {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8faf9;
+}
+
+.importance-segments.compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mode-segments {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   padding: 6px;
   border: 1px solid var(--line);
@@ -171,6 +214,85 @@ p {
 .segment-button.is-selected {
   color: white;
   background: var(--navy);
+}
+
+.form-grid,
+.commute-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.commute-controls {
+  grid-template-columns: 1fr;
+}
+
+.field-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.field-group.full-width {
+  grid-column: 1 / -1;
+}
+
+.field-group select,
+.field-group input[type="number"] {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: white;
+  outline: 0;
+}
+
+.field-group select:disabled {
+  color: var(--muted);
+  background: #edf3ef;
+}
+
+.field-label-row,
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.field-label-row {
+  justify-content: space-between;
+}
+
+.field-label-row strong {
+  color: var(--teal-dark);
+}
+
+.range-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--teal);
+}
+
+.range-row input[type="number"] {
+  width: 98px;
+}
+
+.helper-text,
+.form-message {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.form-message {
+  display: block;
+  margin-top: 4px;
+  color: var(--danger);
 }
 
 .grade-row,
@@ -361,7 +483,7 @@ p {
 
 .map-marker {
   position: absolute;
-  z-index: 2;
+  z-index: 3;
   display: grid;
   gap: 5px;
   min-width: 94px;
@@ -369,6 +491,43 @@ p {
   border: 0;
   background: transparent;
   text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.workplace-marker {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  gap: 5px;
+  min-width: 88px;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.workplace-pin {
+  justify-self: center;
+  min-width: 58px;
+  padding: 8px 10px;
+  border: 2px solid white;
+  border-radius: 8px;
+  color: white;
+  background: var(--navy);
+  box-shadow: 0 14px 26px rgba(31, 45, 52, 0.24);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.workplace-marker::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: -1;
+  width: 94px;
+  height: 94px;
+  content: "";
+  border: 1px dashed rgba(39, 58, 102, 0.45);
+  border-radius: 50%;
+  background: rgba(39, 58, 102, 0.1);
   transform: translate(-50%, -50%);
 }
 
@@ -408,6 +567,60 @@ p {
 
 .marker-icons {
   letter-spacing: 2px;
+}
+
+.commute-connection-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.commute-connection-layer line {
+  stroke: rgba(39, 58, 102, 0.45);
+  stroke-width: 0.45;
+  stroke-dasharray: 2 2;
+}
+
+.commute-connection-layer line.is-selected {
+  stroke: var(--amber);
+  stroke-width: 0.75;
+  stroke-dasharray: 0;
+}
+
+.marker-tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 6;
+  display: none;
+  width: 180px;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--muted);
+  text-align: left;
+  box-shadow: 0 12px 28px rgba(31, 45, 52, 0.16);
+  transform: translateX(-50%);
+}
+
+.marker-tooltip strong,
+.marker-tooltip span {
+  display: block;
+  font-size: 12px;
+}
+
+.marker-tooltip strong {
+  color: var(--ink);
+}
+
+.map-marker:hover .marker-tooltip,
+.map-marker:focus-visible .marker-tooltip {
+  display: grid;
 }
 
 .map-empty,
@@ -457,6 +670,10 @@ p {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8faf9;
+}
+
+.commute-readout {
+  background: #fffaf0;
 }
 
 .preference-readout h2 {
@@ -595,6 +812,65 @@ p {
   gap: 8px;
 }
 
+.commute-summary-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e5dac2;
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.commute-summary-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.commute-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.commute-main strong {
+  color: #765200;
+}
+
+.commute-main span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.commute-time-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.commute-time-grid span {
+  padding: 7px;
+  border-radius: 8px;
+  background: white;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.map-link-button {
+  justify-self: start;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--teal-dark);
+  background: var(--mint);
+  font-size: 13px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
 .axis-score {
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr);
@@ -663,6 +939,7 @@ p {
 .primary-cta:focus-visible,
 .zone-card:focus-visible,
 .map-marker:focus-visible,
+.workplace-marker:focus-visible,
 .map-search input:focus-visible {
   outline: 3px solid rgba(230, 167, 0, 0.55);
   outline-offset: 3px;
@@ -701,7 +978,7 @@ p {
 
 @media (max-width: 720px) {
   .preference-screen {
-    padding-top: 28px;
+    padding: 28px 18px 188px;
   }
 
   .preference-copy h1,
@@ -710,6 +987,8 @@ p {
   }
 
   .importance-segments,
+  .mode-segments,
+  .form-grid,
   .readout-grid {
     grid-template-columns: 1fr;
   }
@@ -722,6 +1001,10 @@ p {
   }
 
   .preference-panel {
+    padding: 18px;
+  }
+
+  .commute-panel {
     padding: 18px;
   }
 
@@ -740,5 +1023,19 @@ p {
 
   .axis-score {
     grid-template-columns: 68px minmax(0, 1fr);
+  }
+
+  .commute-main,
+  .range-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .range-row input[type="number"] {
+    width: 100%;
+  }
+
+  .commute-time-grid {
+    grid-template-columns: 1fr;
   }
 }

@@ -1,9 +1,20 @@
+import {
+  findEmdCenter,
+  getDistrictsByCity,
+  getEmdsBySelection,
+  getWorkplaceCities
+} from "../data/cheonanAsanEmdCenters.js";
 import { getLifeZoneDataset } from "../data/lifeZoneRepository.js";
 import {
   assignRelativeGrades,
   calculateLifeZoneScores,
   getTopAndLowZones
 } from "../utils/lifeZoneScoring.js";
+import {
+  applyCommuteToLifeZoneScores,
+  COMMUTE_MODE_LABELS,
+  normalizeTargetMinutes
+} from "../utils/commuteScoring.js";
 
 const DEFAULT_PREFERENCES = {
   transportImportance: "medium",
@@ -11,10 +22,30 @@ const DEFAULT_PREFERENCES = {
   safetyMedicalImportance: "medium"
 };
 
+const DEFAULT_WORKPLACE_SELECTION = {
+  city: "천안시",
+  district: "서북구",
+  emdCode: ""
+};
+
+const DEFAULT_COMMUTE_PREFERENCE = {
+  workplaceEmdCode: "",
+  targetMinutes: 40,
+  commuteImportance: "medium",
+  commuteMode: "unknown"
+};
+
 const IMPORTANCE_OPTIONS = [
   { value: "low", label: "낮음", description: "중요도 낮음" },
   { value: "medium", label: "보통", description: "보통" },
   { value: "high", label: "높음", description: "높음" }
+];
+
+const COMMUTE_MODE_OPTIONS = [
+  { value: "car", label: "자동차" },
+  { value: "transit", label: "대중교통" },
+  { value: "walk", label: "도보" },
+  { value: "unknown", label: "아직 모름" }
 ];
 
 const AXES = [
@@ -24,7 +55,7 @@ const AXES = [
     name: "대중교통 중요도",
     axisLabel: "교통 인프라 축",
     preferenceKey: "transportImportance",
-    description: "출퇴근, 통학, 외출처럼 일상 이동 편의를 얼마나 중요하게 보는지 선택하세요.",
+    description: "이동 편의와 대중교통 접근성을 얼마나 중요하게 보는지 선택하세요.",
     icon: "🚉"
   },
   {
@@ -33,7 +64,7 @@ const AXES = [
     name: "문화·체육 중요도",
     axisLabel: "생활 편의 인프라 축",
     preferenceKey: "cultureSportsImportance",
-    description: "문화생활과 운동, 여가를 누리기 좋은 생활 환경을 얼마나 중요하게 보는지 선택하세요.",
+    description: "도서관, 체육시설 등 생활 여가 인프라를 얼마나 중요하게 보는지 선택하세요.",
     icon: "📚"
   },
   {
@@ -42,7 +73,7 @@ const AXES = [
     name: "치안·의료 중요도",
     axisLabel: "치안·의료 인프라 축",
     preferenceKey: "safetyMedicalImportance",
-    description: "안전하게 생활하고 필요한 의료 도움을 받기 쉬운 환경을 얼마나 중요하게 보는지 선택하세요.",
+    description: "약국, 치안시설, 안전 인프라를 얼마나 중요하게 보는지 선택하세요.",
     icon: "🚨"
   }
 ];
@@ -64,6 +95,9 @@ const state = {
   view: "preferences",
   activeMapFilter: "transport",
   preferences: { ...DEFAULT_PREFERENCES },
+  workplaceSelection: { ...DEFAULT_WORKPLACE_SELECTION },
+  commutePreference: { ...DEFAULT_COMMUTE_PREFERENCE },
+  validationMessage: "",
   scoredZones: [],
   resultBundle: null,
   selectedZoneId: null
@@ -98,16 +132,27 @@ function renderPreferenceScreen() {
         <div class="preference-copy">
           <p class="eyebrow">Cheonan · Asan Life Zone</p>
           <h1 id="preference-title">생활권 추천 조건 설정</h1>
-          <p class="intro">중요하게 생각하는 생활 조건을 선택하면 천안·아산 생활권 적합도를 계산합니다.</p>
+          <p class="intro">중요하게 생각하는 생활 조건과 직장 위치를 선택하면 천안·아산 생활권을 추천합니다.</p>
         </div>
 
-        <div class="preference-card-list">
-          ${AXES.map((axis) => renderPreferenceCard(axis)).join("")}
-        </div>
+        <section class="preference-section" aria-labelledby="infra-preference-title">
+          <div class="section-heading">
+            <p class="eyebrow">생활 인프라 선호도</p>
+            <h2 id="infra-preference-title">어떤 생활 조건을 중요하게 보나요?</h2>
+          </div>
+          <div class="preference-card-list">
+            ${AXES.map((axis) => renderPreferenceCard(axis)).join("")}
+          </div>
+        </section>
+
+        ${renderWorkplaceCommuteSection()}
       </section>
 
       <footer class="preference-cta" aria-label="생활권 점수 계산">
-        <p>입력한 조건을 기준으로 추천 생활권을 보여줍니다.</p>
+        <div>
+          <p>입력한 조건을 기준으로 추천 생활권을 보여줍니다.</p>
+          ${state.validationMessage ? `<span class="form-message" role="alert">${state.validationMessage}</span>` : ""}
+        </div>
         <button class="primary-cta" type="button" data-calculate aria-label="생활권 점수 계산하기">
           생활권 점수 계산하기
         </button>
@@ -124,10 +169,10 @@ function renderPreferenceCard(axis) {
       <div class="axis-heading">
         <div>
           <p class="axis-kicker">${axis.axisLabel}</p>
-          <h2 id="preference-${axis.id}-title">
+          <h3 id="preference-${axis.id}-title">
             <span aria-hidden="true">${axis.icon}</span>
             ${axis.tabLabel}
-          </h2>
+          </h3>
           <p>${axis.description}</p>
         </div>
       </div>
@@ -151,6 +196,119 @@ function renderPreferenceCard(axis) {
   `;
 }
 
+function renderWorkplaceCommuteSection() {
+  const cities = getWorkplaceCities();
+  const { city, district, emdCode } = state.workplaceSelection;
+  const districts = getDistrictsByCity(city);
+  const districtValue = city === "아산시" ? "해당 없음" : district;
+  const emds = getEmdsBySelection(city, districtValue);
+  const selectedWorkplace = findEmdCenter(emdCode);
+
+  return `
+    <section class="commute-panel" aria-labelledby="commute-title">
+      <div class="section-heading">
+        <p class="eyebrow">직장·통근 조건</p>
+        <h2 id="commute-title">직장 위치와 통근 기준을 선택해 주세요</h2>
+        <p>상세 주소 대신 읍면동을 선택하면 추천 생활권과 직장 위치의 관계를 함께 보여줍니다.</p>
+      </div>
+
+      <div class="form-grid">
+        <label class="field-group" for="workplace-city">
+          <span>시 선택</span>
+          <select id="workplace-city" data-workplace-city>
+            ${cities.map((cityName) => `<option value="${cityName}" ${cityName === city ? "selected" : ""}>${cityName}</option>`).join("")}
+          </select>
+        </label>
+
+        <label class="field-group" for="workplace-district">
+          <span>구 선택</span>
+          <select id="workplace-district" data-workplace-district ${city === "아산시" ? "disabled" : ""}>
+            ${districts.map((districtName) => `
+              <option value="${districtName}" ${districtName === districtValue ? "selected" : ""}>${districtName}</option>
+            `).join("")}
+          </select>
+        </label>
+
+        <label class="field-group" for="workplace-emd">
+          <span>읍면동 선택</span>
+          <select id="workplace-emd" data-workplace-emd aria-invalid="${!selectedWorkplace && Boolean(state.validationMessage)}">
+            <option value="">읍면동 선택</option>
+            ${emds.map((emd) => `
+              <option value="${emd.emdCode}" ${emd.emdCode === emdCode ? "selected" : ""}>${emd.emdName}</option>
+            `).join("")}
+          </select>
+        </label>
+      </div>
+
+      <div class="commute-controls">
+        <div class="field-group full-width">
+          <div class="field-label-row">
+            <span>희망 통근시간</span>
+            <strong>${state.commutePreference.targetMinutes}분</strong>
+          </div>
+          <div class="range-row">
+            <input
+              type="range"
+              min="10"
+              max="120"
+              step="1"
+              value="${state.commutePreference.targetMinutes}"
+              data-commute-target-range
+              aria-label="희망 통근시간 슬라이더"
+            />
+            <input
+              type="number"
+              min="10"
+              max="120"
+              step="1"
+              value="${state.commutePreference.targetMinutes}"
+              data-commute-target-number
+              aria-label="희망 통근시간 직접 입력"
+            />
+          </div>
+          <p class="helper-text">희망하는 통근시간에 가까운 생활권을 함께 고려합니다.</p>
+        </div>
+
+        <div class="field-group full-width">
+          <span>통근 중요도</span>
+          <div class="importance-segments compact" role="radiogroup" aria-label="통근 중요도 선택">
+            ${IMPORTANCE_OPTIONS.map((option) => `
+              <button
+                class="segment-button ${state.commutePreference.commuteImportance === option.value ? "is-selected" : ""}"
+                type="button"
+                role="radio"
+                aria-checked="${state.commutePreference.commuteImportance === option.value}"
+                data-commute-importance="${option.value}"
+              >
+                ${option.label}
+              </button>
+            `).join("")}
+          </div>
+          <p class="helper-text">통근 조건을 어느 정도 중요하게 볼지 선택하세요.</p>
+        </div>
+
+        <div class="field-group full-width">
+          <span>주 통근수단</span>
+          <div class="mode-segments" role="radiogroup" aria-label="주 통근수단 선택">
+            ${COMMUTE_MODE_OPTIONS.map((option) => `
+              <button
+                class="segment-button ${state.commutePreference.commuteMode === option.value ? "is-selected" : ""}"
+                type="button"
+                role="radio"
+                aria-checked="${state.commutePreference.commuteMode === option.value}"
+                data-commute-mode="${option.value}"
+              >
+                ${option.label}
+              </button>
+            `).join("")}
+          </div>
+          <p class="helper-text">선택한 통근수단을 기준으로 예상 소요시간을 계산합니다.</p>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderResultScreen() {
   const bundle = state.resultBundle ?? {
     recommendedZones: [],
@@ -159,6 +317,7 @@ function renderResultScreen() {
   };
   const displayZones = bundle.displayZones;
   const selectedZone = displayZones.find((zone) => zone.id === state.selectedZoneId) ?? displayZones[0] ?? null;
+  const selectedWorkplace = getSelectedWorkplace();
 
   return `
     <main class="result-screen">
@@ -183,7 +342,7 @@ function renderResultScreen() {
         </div>
 
         <div class="mock-map" role="region" aria-label="천안·아산 생활권 추천 위치 지도">
-          <p class="sr-only">추천 생활권과 비추천 생활권의 위치를 지도형 배경 위에 버튼 마커로 표시합니다.</p>
+          <p class="sr-only">선택한 직장 읍면동과 추천 생활권, 비추천 생활권의 위치를 지도형 배경 위에 표시합니다.</p>
           <svg class="rail-overlay" viewBox="0 0 100 100" aria-hidden="true">
             <path class="rail-line" d="M10 84 C24 67 39 61 50 48 S72 27 90 15" />
             <text x="12" y="80">1호선 접근축</text>
@@ -192,6 +351,8 @@ function renderResultScreen() {
           <div class="city-label asan">아산 생활권</div>
           <div class="map-grid-line horizontal"></div>
           <div class="map-grid-line vertical"></div>
+          ${selectedWorkplace && displayZones.length > 0 ? renderCommuteConnectionLayer(selectedWorkplace, displayZones, selectedZone?.id) : ""}
+          ${selectedWorkplace ? renderWorkplaceMarker(selectedWorkplace) : ""}
           ${displayZones.length === 0 ? renderMapEmptyState() : displayZones.map((zone) => renderMapMarker(zone, selectedZone?.id)).join("")}
         </div>
       </section>
@@ -199,17 +360,17 @@ function renderResultScreen() {
       <aside class="result-panel" aria-label="생활권 추천 결과">
         <div class="panel-header">
           <div>
-            <p class="eyebrow">선호도 기반 적합도 계산</p>
+            <p class="eyebrow">선호도 기반 생활권 비교</p>
             <h1>생활권 추천 결과</h1>
-          <p>입력한 중요도를 기준으로 계산한 결과입니다.</p>
-          <small class="data-source-label">${lifeZoneDataset.sourceLabel}</small>
+            <p>입력한 생활 조건과 직장 위치를 기준으로 살펴본 결과입니다.</p>
+            <small class="data-source-label">${lifeZoneDataset.sourceLabel}</small>
           </div>
           <button class="secondary-button" type="button" data-reset-preferences aria-label="선호도 다시 설정">
             선호도 다시 설정
           </button>
         </div>
 
-        <section class="preference-readout" aria-label="사용자 프로필 및 선호도 요약">
+        <section class="preference-readout" aria-label="사용자 선호도 요약">
           <h2>사용자 선호도 요약</h2>
           <div class="readout-grid">
             ${AXES.map((axis) => `
@@ -221,13 +382,51 @@ function renderResultScreen() {
           </div>
         </section>
 
+        ${selectedWorkplace ? renderCommuteReadout(selectedWorkplace) : ""}
+
         <div class="result-count">추천 ${bundle.recommendedZones.length}개 · 비추천 ${bundle.lowZone ? 1 : 0}개</div>
 
         <section class="zone-card-list" role="listbox" aria-label="생활권 결과 목록">
-          ${displayZones.length === 0 ? renderPanelEmptyState() : displayZones.map((zone) => renderResultCard(zone, selectedZone?.id)).join("")}
+          ${displayZones.length === 0 ? renderPanelEmptyState() : displayZones.map((zone) => renderResultCard(zone, selectedZone?.id, selectedWorkplace)).join("")}
         </section>
       </aside>
     </main>
+  `;
+}
+
+function renderCommuteConnectionLayer(workplace, zones, selectedZoneId) {
+  const workplacePosition = getMapPosition(workplace);
+
+  return `
+    <svg class="commute-connection-layer" viewBox="0 0 100 100" aria-hidden="true">
+      ${zones.map((zone) => {
+        const zonePosition = getMapPosition(zone);
+        return `
+          <line
+            class="${zone.id === selectedZoneId ? "is-selected" : ""}"
+            x1="${workplacePosition.x}"
+            y1="${workplacePosition.y}"
+            x2="${zonePosition.x}"
+            y2="${zonePosition.y}"
+          />
+        `;
+      }).join("")}
+    </svg>
+  `;
+}
+
+function renderWorkplaceMarker(workplace) {
+  const position = getMapPosition(workplace);
+
+  return `
+    <div
+      class="workplace-marker"
+      style="left: ${position.x}%; top: ${position.y}%;"
+      aria-label="직장 위치 ${formatWorkplaceName(workplace)}"
+    >
+      <span class="workplace-pin">직장</span>
+      <span class="marker-name">${workplace.emdName}</span>
+    </div>
   `;
 }
 
@@ -249,11 +448,25 @@ function renderMapMarker(zone, selectedZoneId) {
       <span class="marker-pin">${label}</span>
       <span class="marker-name">${zone.eupMyeonDong}</span>
       <span class="marker-icons" aria-hidden="true">${getInfraIcons(zone, state.activeMapFilter).join("")}</span>
+      ${zone.commute ? renderMarkerTooltip(zone) : ""}
     </button>
   `;
 }
 
-function renderResultCard(zone, selectedZoneId) {
+function renderMarkerTooltip(zone) {
+  return `
+    <span class="marker-tooltip">
+      <strong>${zone.name}</strong>
+      <span>${zone.grade} 등급</span>
+      <span>자동차 약 ${formatMinutes(zone.commute.commuteTimes.car)}분</span>
+      <span>대중교통 약 ${formatMinutes(zone.commute.commuteTimes.transit)}분</span>
+      <span>도보 약 ${formatMinutes(zone.commute.commuteTimes.walk)}분</span>
+      <span>${zone.commute.statusLabel}</span>
+    </span>
+  `;
+}
+
+function renderResultCard(zone, selectedZoneId, workplace) {
   const selected = zone.id === selectedZoneId;
   const cardClass = zone.rankType === "low" ? "is-low" : "is-recommended";
 
@@ -283,7 +496,9 @@ function renderResultCard(zone, selectedZoneId) {
         <span>${zone.gradeLabel}</span>
       </div>
 
-      <div class="axis-score-list">
+      ${zone.commute ? renderCommuteSummaryCard(zone, workplace) : ""}
+
+      <div class="axis-score-list" aria-label="분야별 점수 요약">
         ${renderAxisScore("교통", zone.axisScores.transport)}
         ${renderAxisScore("생활 편의", zone.axisScores.living)}
         ${renderAxisScore("치안·의료", zone.axisScores.safetyMedical)}
@@ -306,6 +521,50 @@ function renderResultCard(zone, selectedZoneId) {
   `;
 }
 
+function renderCommuteSummaryCard(zone, workplace) {
+  const commute = zone.commute;
+
+  return `
+    <div class="commute-summary-card">
+      <div class="commute-main">
+        <strong>${commute.commuteModeLabel} 약 ${formatMinutes(commute.actualMinutes)}분</strong>
+        <span>${commute.statusLabel} · 추정값</span>
+      </div>
+      <p>${formatWorkplaceName(workplace)} 직장 기준 예상 통근시간입니다.</p>
+      <div class="commute-time-grid" aria-label="통근수단별 예상 소요시간">
+        <span>자동차 약 ${formatMinutes(commute.commuteTimes.car)}분</span>
+        <span>대중교통 약 ${formatMinutes(commute.commuteTimes.transit)}분</span>
+        <span>도보 약 ${formatMinutes(commute.commuteTimes.walk)}분</span>
+      </div>
+      <a class="map-link-button" href="${getNaverMapSearchUrl(zone, workplace)}" target="_blank" rel="noopener noreferrer">
+        지도에서 위치 확인
+      </a>
+    </div>
+  `;
+}
+
+function renderCommuteReadout(workplace) {
+  return `
+    <section class="preference-readout commute-readout" aria-label="직장 통근 조건 요약">
+      <h2>직장·통근 조건</h2>
+      <div class="readout-grid">
+        <div>
+          <span>직장 위치</span>
+          <strong>${formatWorkplaceName(workplace)}</strong>
+        </div>
+        <div>
+          <span>희망 통근시간</span>
+          <strong>${state.commutePreference.targetMinutes}분</strong>
+        </div>
+        <div>
+          <span>주 통근수단</span>
+          <strong>${getCommuteModeLabel(state.commutePreference.commuteMode)}</strong>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderAxisScore(label, value) {
   return `
     <div class="axis-score">
@@ -319,7 +578,7 @@ function renderMapEmptyState() {
   return `
     <div class="map-empty">
       <strong>표시할 생활권 데이터가 없습니다.</strong>
-      <span>공공데이터 전처리 결과를 연결하면 같은 구조로 표시됩니다.</span>
+      <span>공공데이터 전처리 결과를 연결하면 같은 구조로 표시합니다.</span>
     </div>
   `;
 }
@@ -342,6 +601,7 @@ function bindPreferenceEvents() {
         ...state.preferences,
         [axis.preferenceKey]: button.dataset.importance
       };
+      state.validationMessage = "";
       render();
     });
     button.addEventListener("keydown", (event) => {
@@ -360,21 +620,118 @@ function bindPreferenceEvents() {
         ...state.preferences,
         [axis.preferenceKey]: IMPORTANCE_OPTIONS[nextIndex].value
       };
+      state.validationMessage = "";
       render();
       focusAfterRender(`[data-axis="${axis.id}"][data-importance="${IMPORTANCE_OPTIONS[nextIndex].value}"]`);
     });
   });
 
+  appRoot.querySelector("[data-workplace-city]")?.addEventListener("change", (event) => {
+    const city = event.target.value;
+    const district = getDefaultDistrict(city);
+
+    state.workplaceSelection = { city, district, emdCode: "" };
+    state.commutePreference = { ...state.commutePreference, workplaceEmdCode: "" };
+    state.validationMessage = "";
+    render();
+  });
+
+  appRoot.querySelector("[data-workplace-district]")?.addEventListener("change", (event) => {
+    state.workplaceSelection = {
+      ...state.workplaceSelection,
+      district: event.target.value,
+      emdCode: ""
+    };
+    state.commutePreference = { ...state.commutePreference, workplaceEmdCode: "" };
+    state.validationMessage = "";
+    render();
+  });
+
+  appRoot.querySelector("[data-workplace-emd]")?.addEventListener("change", (event) => {
+    state.workplaceSelection = {
+      ...state.workplaceSelection,
+      emdCode: event.target.value
+    };
+    state.commutePreference = {
+      ...state.commutePreference,
+      workplaceEmdCode: event.target.value
+    };
+    state.validationMessage = "";
+    render();
+  });
+
+  bindTargetMinuteInputs();
+  bindCommuteOptionButtons();
+
   appRoot.querySelector("[data-calculate]")?.addEventListener("click", () => {
-    const scoredZones = calculateLifeZoneScores(lifeZoneDataset.lifeZones, state.preferences);
-    const gradedZones = assignRelativeGrades(scoredZones);
+    const selectedWorkplace = getSelectedWorkplace();
+
+    if (!selectedWorkplace) {
+      state.validationMessage = "직장 위치와 통근 조건을 선택해주세요.";
+      render();
+      return;
+    }
+
+    const baseScoredZones = calculateLifeZoneScores(lifeZoneDataset.lifeZones, state.preferences);
+    const commuteScoredZones = applyCommuteToLifeZoneScores(
+      baseScoredZones,
+      selectedWorkplace,
+      state.commutePreference
+    );
+    const gradedZones = assignRelativeGrades(commuteScoredZones);
     const resultBundle = getTopAndLowZones(gradedZones);
 
     state.scoredZones = gradedZones;
     state.resultBundle = resultBundle;
     state.selectedZoneId = resultBundle.displayZones[0]?.id ?? null;
+    state.validationMessage = "";
     state.view = "results";
     render();
+  });
+}
+
+function bindTargetMinuteInputs() {
+  const rangeInput = appRoot.querySelector("[data-commute-target-range]");
+  const numberInput = appRoot.querySelector("[data-commute-target-number]");
+  const updateTarget = (value) => {
+    const targetMinutes = normalizeTargetMinutes(value);
+
+    state.commutePreference = {
+      ...state.commutePreference,
+      targetMinutes
+    };
+    state.validationMessage = "";
+    if (rangeInput) rangeInput.value = String(targetMinutes);
+    if (numberInput) numberInput.value = String(targetMinutes);
+    appRoot.querySelector(".field-label-row strong")?.replaceChildren(`${targetMinutes}분`);
+  };
+
+  rangeInput?.addEventListener("input", (event) => updateTarget(event.target.value));
+  numberInput?.addEventListener("input", (event) => updateTarget(event.target.value));
+  numberInput?.addEventListener("blur", (event) => updateTarget(event.target.value));
+}
+
+function bindCommuteOptionButtons() {
+  appRoot.querySelectorAll("[data-commute-importance]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.commutePreference = {
+        ...state.commutePreference,
+        commuteImportance: button.dataset.commuteImportance
+      };
+      state.validationMessage = "";
+      render();
+    });
+  });
+
+  appRoot.querySelectorAll("[data-commute-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.commutePreference = {
+        ...state.commutePreference,
+        commuteMode: button.dataset.commuteMode
+      };
+      state.validationMessage = "";
+      render();
+    });
   });
 }
 
@@ -406,8 +763,21 @@ function bindResultEvents() {
   });
 }
 
+function getSelectedWorkplace() {
+  return findEmdCenter(state.commutePreference.workplaceEmdCode || state.workplaceSelection.emdCode);
+}
+
+function getDefaultDistrict(city) {
+  return getDistrictsByCity(city)[0] ?? "해당 없음";
+}
+
 function getImportanceLabel(importance) {
   return IMPORTANCE_OPTIONS.find((option) => option.value === importance)?.label ?? "보통";
+}
+
+function getCommuteModeLabel(mode) {
+  const selected = COMMUTE_MODE_OPTIONS.find((option) => option.value === mode);
+  return selected?.label ?? COMMUTE_MODE_LABELS.unknown;
 }
 
 function getHorizontalKeyDirection(event) {
@@ -436,7 +806,7 @@ function getZoneDescription(zone) {
 }
 
 function getZoneStrengths(zone) {
-  const fallback = ["입력 조건에 잘 맞는 생활 환경을 갖춘 편입니다."];
+  const fallback = ["입력 조건에 맞는 생활 여건을 갖춘 편입니다."];
   const strengths = Array.isArray(zone.strengths) && zone.strengths.length > 0 ? zone.strengths : fallback;
   return strengths.map(simplifyUserFacingReason);
 }
@@ -448,10 +818,9 @@ function getZoneWeaknesses(zone) {
 }
 
 function getZoneTags(zone) {
-  const tags = Array.isArray(zone.tags) && zone.tags.length > 0
+  return Array.isArray(zone.tags) && zone.tags.length > 0
     ? zone.tags
     : ["생활권 비교", "데이터 보완 예정"];
-  return tags;
 }
 
 function simplifyUserFacingReason(text) {
@@ -464,9 +833,9 @@ function simplifyUserFacingReason(text) {
     .replace(/체육 인프라가 비교적 가까움/g, "운동·여가 생활을 누리기 좋은 편입니다")
     .replace(/철도 접근성은 중심역 생활권보다 낮음/g, "광역 이동은 생활 동선에 맞춰 확인이 필요합니다")
     .replace(/공공·작은도서관 접근성이 함께 확보됨/g, "문화생활을 누리기 좋은 편입니다")
-    .replace(/비상벨 밀도는 도심권 대비 낮음/g, "야간 생활 안전감은 현장 확인이 필요합니다")
+    .replace(/비상벨 밀도는 중심권 대비 낮음/g, "야간 생활 안전감은 현장 확인이 필요합니다")
     .replace(/1호선 접근성이 높음/g, "1호선 이용이 편리한 편입니다")
-    .replace(/약국과 공공 안전시설 접근성이 우수/g, "생활 안전과 의료 이용 여건이 좋은 편입니다")
+    .replace(/약국과 공공 안전시설 접근성이 양호/g, "생활 안전과 의료 이용 여건이 좋은 편입니다")
     .replace(/철도 접근성과 체육 인프라 접근성이 안정적/g, "이동과 여가 생활의 균형이 좋은 편입니다")
     .replace(/넓은 면적 때문에 밀도 지표는 일부 낮게 산정될 수 있음/g, "생활권이 넓어 동네별 체감 차이가 있을 수 있습니다")
     .replace(/버스 접근성은 기본 수준 이상/g, "기본적인 대중교통 이용은 가능한 편입니다")
@@ -477,9 +846,9 @@ function simplifyUserFacingReason(text) {
     .replace(/지표/g, "조건");
 }
 
-function getMapPosition(zone) {
-  const x = (zone.lng - MAP_BOUNDS.minLng) / (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng) * 100;
-  const y = (1 - (zone.lat - MAP_BOUNDS.minLat) / (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat)) * 100;
+function getMapPosition(point) {
+  const x = (point.lng - MAP_BOUNDS.minLng) / (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng) * 100;
+  const y = (1 - (point.lat - MAP_BOUNDS.minLat) / (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat)) * 100;
 
   return {
     x: Math.min(92, Math.max(8, x)),
@@ -509,4 +878,19 @@ function getInfraIcons(zone, filter) {
     infra.fire119Centers ? "🚨" : "",
     infra.policeStations ? "🚔" : ""
   ].filter(Boolean);
+}
+
+function formatWorkplaceName(workplace) {
+  if (!workplace) return "직장 위치";
+  const district = workplace.district && workplace.district !== "해당 없음" ? ` ${workplace.district}` : "";
+  return `${workplace.city}${district} ${workplace.emdName}`;
+}
+
+function formatMinutes(value) {
+  return Number.isFinite(value) ? Math.max(1, Math.round(value)) : "-";
+}
+
+function getNaverMapSearchUrl(zone, workplace) {
+  const query = encodeURIComponent(`${formatWorkplaceName(workplace)} ${zone.city} ${zone.eupMyeonDong}`);
+  return `https://map.naver.com/p/search/${query}`;
 }
