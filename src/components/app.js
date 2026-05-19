@@ -20,6 +20,7 @@ import {
 } from "../utils/commuteScoring.js";
 import { getVisibleRiHighlightSentences } from "../utils/riHighlights.js";
 import { buildNaverDirectionsUrl } from "../utils/naverDirectionsUrl.js";
+import { fetchDrivingCommuteBatch } from "../utils/drivingCommuteApi.js";
 import { NaverMapView } from "./NaverMapView.js";
 
 const DEFAULT_PREFERENCES = {
@@ -338,15 +339,12 @@ function renderResultScreen() {
           <div>
             <p class="eyebrow">선호도 기반 생활권 비교</p>
             <h1>생활권 추천 결과</h1>
-            <p>입력한 생활 조건과 직장 위치를 기준으로 살펴본 결과입니다.</p>
+            <p class="panel-summary">입력한 생활 조건과 직장 위치를 기준으로 살펴본 결과입니다.</p>
             <small class="data-source-label ${lifeZoneDataset.sourceType === "mock" ? "is-mock" : "is-generated"}">
               ${lifeZoneDataset.sourceLabel}
             </small>
             <small class="dataset-detail">${getDatasetDetailText()}</small>
           </div>
-          <button class="secondary-button" type="button" data-reset-preferences aria-label="선호도 다시 설정">
-            선호도 다시 설정
-          </button>
         </div>
 
         <div class="result-count">추천 ${bundle.recommendedZones.length}개 · 비추천 ${bundle.lowZone ? 1 : 0}개</div>
@@ -356,6 +354,7 @@ function renderResultScreen() {
         </section>
 
         ${bundle.commuteFeasibilityNotice ? renderCommuteFeasibilityNotice(bundle.commuteFeasibilityNotice) : ""}
+        ${renderResultActions()}
         ${renderPreferenceReadout()}
         ${selectedWorkplace ? renderCommuteReadout(selectedWorkplace) : ""}
       </aside>
@@ -567,7 +566,35 @@ function renderDrivingCommuteStatus(commute) {
     return "";
   }
 
-  return `<p class="commute-api-status is-failed">${commute.drivingMessage ?? "자동차 길찾기 정보를 불러오지 못했습니다."}</p>`;
+  return `
+    <p class="commute-api-status is-failed">
+      ${commute.drivingMessage ?? "자동차 길찾기 정보를 불러오지 못했습니다."}
+      <small>${getDrivingCommuteDebugText(commute)}</small>
+    </p>
+  `;
+}
+
+function getDrivingCommuteDebugText(commute = {}) {
+  if (commute.drivingErrorCode === "MISSING_NAVER_ENV") {
+    return "Vercel 환경변수 등록과 재배포가 필요합니다.";
+  }
+
+  if (
+    commute.drivingErrorCode === "NAVER_DIRECTIONS_UNAUTHORIZED" ||
+    commute.drivingErrorCode === "NAVER_DIRECTIONS_FORBIDDEN"
+  ) {
+    return "네이버 API 권한 또는 등록 도메인을 확인해주세요.";
+  }
+
+  if (commute.drivingErrorCode === "NAVER_DIRECTIONS_RATE_LIMITED") {
+    return "요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
+  }
+
+  if (commute.drivingErrorCode) {
+    return `오류 코드: ${commute.drivingErrorCode}`;
+  }
+
+  return "통근 조건은 자동차 실제 길찾기 기준으로 반영되지 않았습니다.";
 }
 
 function renderNaverDirectionsLink(zone, workplace) {
@@ -613,6 +640,16 @@ function renderCommuteReadout(workplace) {
         </div>
       </div>
     </section>
+  `;
+}
+
+function renderResultActions() {
+  return `
+    <div class="result-actions">
+      <button class="secondary-button compact" type="button" data-reset-preferences aria-label="선호도 다시 설정">
+        선호도 다시 설정
+      </button>
+    </div>
   `;
 }
 
@@ -750,7 +787,7 @@ function bindPreferenceEvents() {
   bindTargetMinuteInputs();
   bindCommuteOptionButtons();
 
-  appRoot.querySelector("[data-calculate]")?.addEventListener("click", () => {
+  appRoot.querySelector("[data-calculate]")?.addEventListener("click", async () => {
     const selectedWorkplace = getSelectedWorkplace();
 
     if (!selectedWorkplace) {
@@ -774,8 +811,9 @@ function bindPreferenceEvents() {
     }
 
     const baseScoredZones = calculateLifeZoneScores(lifeZoneDataset.lifeZones, state.preferences);
+    const zonesWithDrivingCommutes = await attachDrivingCommutesIfNeeded(baseScoredZones, selectedWorkplace);
     const commuteScoredZones = applyCommuteToLifeZoneScores(
-      baseScoredZones,
+      zonesWithDrivingCommutes,
       selectedWorkplace,
       state.commutePreference
     );
@@ -789,6 +827,22 @@ function bindPreferenceEvents() {
     state.view = "results";
     render();
   });
+}
+
+async function attachDrivingCommutesIfNeeded(baseScoredZones, selectedWorkplace) {
+  if (state.commutePreference.commuteMode !== "car") {
+    return baseScoredZones;
+  }
+
+  const drivingCommuteByZoneId = await fetchDrivingCommuteBatch({
+    start: selectedWorkplace,
+    lifeZones: baseScoredZones
+  });
+
+  return baseScoredZones.map((zone) => ({
+    ...zone,
+    drivingCommute: drivingCommuteByZoneId.get(zone.id) ?? null
+  }));
 }
 
 function bindTargetMinuteInputs() {

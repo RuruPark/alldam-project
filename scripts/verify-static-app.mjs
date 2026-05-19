@@ -13,6 +13,9 @@ const requiredFiles = [
   "index.html",
   "public-config.js",
   "vercel.json",
+  "api/commute/_driving-core.js",
+  "api/commute/driving.js",
+  "api/commute/driving-batch.js",
   "scripts/build-vercel-static.mjs",
   "scripts/prepare-admin-boundaries.mjs",
   "scripts/prepare-vworld-boundaries.mjs",
@@ -46,15 +49,18 @@ const requiredFiles = [
   "docs/data-scoring-plan.md",
   "docs/generated-life-zones-summary.md",
   "docs/preprocessed-csv-diagnosis.md",
+  "docs/vercel-directions-setup.md",
   ".env.example",
   "tests/cheonanAsanMapBounds.test.mjs",
   "tests/commuteFeasibility.test.mjs",
   "tests/commuteTimeInput.test.mjs",
   "tests/drivingApiActualOnly.test.mjs",
+  "tests/drivingApiDiagnostics.test.mjs",
   "tests/mapFocusBehavior.test.mjs",
   "tests/naverDirectionsUrl.test.mjs",
   "tests/riHighlights.test.mjs",
-  "tests/uiTextCleanup.test.mjs"
+  "tests/uiTextCleanup.test.mjs",
+  "tests/uiLayoutCleanup.test.mjs"
 ];
 
 await Promise.all(requiredFiles.map((file) => readFile(new URL(`../${file}`, import.meta.url), "utf8")));
@@ -70,6 +76,10 @@ const commuteFeasibility = await readFile(new URL("../src/utils/commuteFeasibili
 const commuteEstimator = await readFile(new URL("../src/utils/commuteEstimator.js", import.meta.url), "utf8");
 const commuteScoring = await readFile(new URL("../src/utils/commuteScoring.js", import.meta.url), "utf8");
 const drivingCommuteApi = await readFile(new URL("../src/utils/drivingCommuteApi.js", import.meta.url), "utf8");
+const drivingApiCore = await readFile(new URL("../api/commute/_driving-core.js", import.meta.url), "utf8");
+const drivingApiRoute = await readFile(new URL("../api/commute/driving.js", import.meta.url), "utf8");
+const drivingBatchApiRoute = await readFile(new URL("../api/commute/driving-batch.js", import.meta.url), "utf8");
+const vercelDirectionsSetup = await readFile(new URL("../docs/vercel-directions-setup.md", import.meta.url), "utf8");
 const cheonanAsanMapBounds = await readFile(new URL("../src/utils/cheonanAsanMapBounds.js", import.meta.url), "utf8");
 const naverDirectionsUrl = await readFile(new URL("../src/utils/naverDirectionsUrl.js", import.meta.url), "utf8");
 const publicConfigIndex = indexHtml.indexOf("./public-config.js");
@@ -205,6 +215,45 @@ if (!appJs.includes("buildNaverDirectionsUrl") || !appJs.includes("네이버 길
 
 if (!drivingCommuteApi.includes("isActualApiValue") || !drivingCommuteApi.includes("durationMinutes: null")) {
   throw new Error("drivingCommuteApi.js must distinguish actual Naver driving values from unavailable values.");
+}
+
+if (!drivingCommuteApi.includes("fetchDrivingCommuteBatch") || !appJs.includes("fetchDrivingCommuteBatch")) {
+  throw new Error("app.js must fetch Vercel driving commute results before car-mode scoring.");
+}
+
+if (
+  !drivingApiCore.includes("MISSING_NAVER_ENV") ||
+  !drivingApiCore.includes("NAVER_DIRECTIONS_FORBIDDEN") ||
+  !drivingApiCore.includes("NAVER_DIRECTIONS_RATE_LIMITED") ||
+  !drivingApiCore.includes("durationMinutes: null") ||
+  !drivingApiCore.includes("hasClientSecret")
+) {
+  throw new Error("driving API core must expose safe diagnostics and never synthesize fallback car minutes.");
+}
+
+if (
+  !drivingApiCore.includes("https://naveropenapi.apigw.ntruss.com/map-direction/v1/driving") ||
+  !drivingApiCore.includes("X-NCP-APIGW-API-KEY-ID") ||
+  !drivingApiCore.includes("X-NCP-APIGW-API-KEY")
+) {
+  throw new Error("driving API core must call the Naver Directions 5 endpoint with NCP headers.");
+}
+
+if (!drivingApiRoute.includes("createDrivingCommuteResponse") || !drivingBatchApiRoute.includes("createDrivingBatchResponse")) {
+  throw new Error("Vercel driving API routes must delegate to the tested driving core.");
+}
+
+if (
+  !vercelDirectionsSetup.includes("NAVER_MAP_CLIENT_ID") ||
+  !vercelDirectionsSetup.includes("NAVER_MAP_CLIENT_SECRET") ||
+  !vercelDirectionsSetup.includes("NAVER_DIRECTIONS_BASE_URL") ||
+  !vercelDirectionsSetup.includes("재배포")
+) {
+  throw new Error("vercel-directions-setup.md must document Vercel Directions environment setup.");
+}
+
+if (!appJs.includes("panel-summary") || !appJs.includes("renderResultActions()")) {
+  throw new Error("app.js must use compact result-panel summary and move the reset action below result cards.");
 }
 
 if (!commuteEstimator.includes("car: null") || commuteEstimator.includes("car: estimateCarMinutes")) {

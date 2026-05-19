@@ -278,6 +278,8 @@ export function buildCommuteSummary(workplace, lifeZone, commutePreference = {})
     isCommuteScoreApplied,
     isDrivingActualApiValue,
     drivingApiStatus: commuteTimes.driving?.apiStatus ?? "unavailable",
+    drivingErrorCode: commuteTimes.driving?.errorCode ?? null,
+    drivingDiagnostics: commuteTimes.driving?.diagnostics ?? null,
     drivingMessage: commuteTimes.driving?.message ?? null
   };
 }

@@ -54,7 +54,7 @@ button {
 
 .preference-screen {
   min-height: 100vh;
-  padding: 34px 18px 132px;
+  padding: 28px 16px 112px;
 }
 
 .preference-workspace {
@@ -64,8 +64,8 @@ button {
 
 .preference-copy {
   display: grid;
-  gap: 8px;
-  margin-bottom: 18px;
+  gap: 6px;
+  margin-bottom: 14px;
 }
 
 .preference-section {
@@ -76,12 +76,12 @@ button {
 
 .section-heading {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .section-heading h2 {
   margin-bottom: 0;
-  font-size: 24px;
+  font-size: 22px;
 }
 
 .eyebrow {
@@ -159,8 +159,8 @@ p {
 
 .preference-panel {
   display: grid;
-  gap: 14px;
-  padding: 18px 20px;
+  gap: 10px;
+  padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -169,8 +169,8 @@ p {
 
 .commute-panel {
   display: grid;
-  gap: 14px;
-  padding: 18px 20px;
+  gap: 10px;
+  padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfdfb;
@@ -181,7 +181,7 @@ p {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  gap: 14px;
 }
 
 .axis-kicker {
@@ -193,15 +193,15 @@ p {
 
 .axis-heading h2,
 .axis-heading h3 {
-  margin-bottom: 6px;
-  font-size: 24px;
+  margin-bottom: 4px;
+  font-size: 22px;
 }
 
 .importance-segments {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  padding: 6px;
+  gap: 6px;
+  padding: 5px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8faf9;
@@ -214,15 +214,15 @@ p {
 .mode-segments {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  padding: 6px;
+  gap: 6px;
+  padding: 5px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8faf9;
 }
 
 .segment-button {
-  min-height: 48px;
+  min-height: 42px;
   color: var(--muted);
   background: transparent;
   font-weight: 900;
@@ -237,7 +237,7 @@ p {
 .commute-controls {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 9px;
 }
 
 .commute-controls {
@@ -246,7 +246,7 @@ p {
 
 .field-group {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   color: var(--ink);
   font-weight: 900;
@@ -304,7 +304,7 @@ p {
 .form-message {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1.45;
 }
@@ -332,9 +332,9 @@ p {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  min-height: 68px;
-  padding: 10px 18px;
+  gap: 12px;
+  min-height: 58px;
+  padding: 8px 16px;
   border-top: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 -12px 30px rgba(31, 45, 52, 0.12);
@@ -348,8 +348,8 @@ p {
 }
 
 .primary-cta {
-  min-height: 46px;
-  padding: 0 22px;
+  min-height: 42px;
+  padding: 0 18px;
   color: white;
   background: var(--teal);
   font-weight: 900;
@@ -746,6 +746,13 @@ p {
   font-size: 27px;
 }
 
+.panel-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .secondary-button {
   min-height: 42px;
   padding: 0 14px;
@@ -754,10 +761,21 @@ p {
   font-weight: 900;
 }
 
+.secondary-button.compact {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.result-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
 .preference-readout {
   display: grid;
-  gap: 9px;
-  padding: 10px;
+  gap: 7px;
+  padding: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8faf9;
@@ -769,7 +787,7 @@ p {
 
 .preference-readout h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .readout-grid {
@@ -781,7 +799,7 @@ p {
 .readout-grid div {
   display: grid;
   gap: 2px;
-  padding: 7px;
+  padding: 6px;
   border-radius: 8px;
   background: white;
 }
@@ -990,6 +1008,14 @@ p {
   margin: 0;
   font-size: 12px;
   font-weight: 900;
+}
+
+.commute-api-status small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .commute-api-status.is-success {
