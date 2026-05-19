@@ -193,3 +193,19 @@ totalScore =
 - 네이버 지도 Client ID가 있으면 지도 위에 직장 읍면동 경계와 매칭되는 생활권 경계를 표시한다.
 - Client ID가 없거나 지도 로딩에 실패하면 기존 fallback 지도 UI를 유지한다.
 - 이번 단계에서도 Directions 5 API, 대중교통 API, 백엔드 서버는 추가하지 않는다.
+
+## 10. 실제 CSV 기반 생활권 점수 생성 방식
+
+- `scripts/generate-life-zones-from-csv.mjs`는 `data/전처리파일(csv)` 폴더의 CSV를 자동 탐색해 `src/data/generatedLifeZones.js`를 생성한다.
+- CSV 유형과 추천 축은 `src/data/infrastructureCsvConfig.js`에서 관리한다.
+- 주소 기반 데이터는 `src/utils/addressParser.js`로 천안·아산의 시, 구, 읍면동, 리 정보를 추출한 뒤 행정동 경계와 매칭한다.
+- 버스정류장 데이터는 위도/경도 좌표를 `src/utils/pointInPolygon.js`로 실제 행정동 polygon에 매칭한다.
+- 인프라 count는 항목별 `log1p` 변환 후 전체 행정동 기준 min-max 정규화한다.
+- 교통 인프라는 버스정류장 70%, 도시철도역사 30%를 반영한다.
+- 생활 편의 인프라는 도서관/작은도서관 60%, 체육 관련 시설 40%를 반영한다.
+- 치안 의료 인프라는 병원 20%, 약국 20%, 119안전센터 15%, 지구대/파출소 15%, 보안등 15%, 알람벨 10%, 실내구호소 5%를 반영한다.
+- `baseScore`는 교통 35%, 생활 편의 35%, 치안 의료 30%로 계산한다.
+- 리 정보가 있는 주소 데이터는 `riHighlights`로 보조 집계하지만, 리 경계 데이터가 없으므로 지도 polygon은 행정동 단위로 유지한다.
+- `getLifeZoneDataset()`은 `generatedLifeZones`가 있으면 실제 CSV 기반 데이터를 우선 사용하고, 없거나 비어 있으면 `mockLifeZones`를 fallback으로 사용한다.
+- 결과 카드는 `riHighlights`가 있는 생활권에 한해 주요 리 인프라를 최대 3개까지 표시한다.
+- 이번 단계에서도 Directions 5 API, 대중교통 API, 주소 지오코딩 API, 백엔드 서버는 추가하지 않는다.

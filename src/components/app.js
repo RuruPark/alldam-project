@@ -138,6 +138,9 @@ function renderPreferenceScreen() {
           <p class="eyebrow">Cheonan · Asan Life Zone</p>
           <h1 id="preference-title">생활권 추천 조건 설정</h1>
           <p class="intro">중요하게 생각하는 생활 조건과 직장 위치를 선택하면 천안·아산 생활권을 추천합니다.</p>
+          <small class="data-source-label ${lifeZoneDataset.sourceType === "mock" ? "is-mock" : "is-generated"}">
+            ${lifeZoneDataset.sourceLabel}
+          </small>
         </div>
 
         <section class="preference-section" aria-labelledby="infra-preference-title">
@@ -368,7 +371,9 @@ function renderResultScreen() {
             <p class="eyebrow">선호도 기반 생활권 비교</p>
             <h1>생활권 추천 결과</h1>
             <p>입력한 생활 조건과 직장 위치를 기준으로 살펴본 결과입니다.</p>
-            <small class="data-source-label">${lifeZoneDataset.sourceLabel}</small>
+            <small class="data-source-label ${lifeZoneDataset.sourceType === "mock" ? "is-mock" : "is-generated"}">
+              ${lifeZoneDataset.sourceLabel}
+            </small>
           </div>
           <button class="secondary-button" type="button" data-reset-preferences aria-label="선호도 다시 설정">
             선호도 다시 설정
@@ -392,7 +397,7 @@ function renderResultScreen() {
         <div class="result-count">추천 ${bundle.recommendedZones.length}개 · 비추천 ${bundle.lowZone ? 1 : 0}개</div>
 
         <section class="zone-card-list" role="listbox" aria-label="생활권 결과 목록">
-          ${displayZones.length === 0 ? renderPanelEmptyState() : displayZones.map((zone) => renderResultCard(zone, selectedZone?.id, selectedWorkplace)).join("")}
+          ${displayZones.length === 0 ? renderPanelEmptyState(lifeZoneDataset) : displayZones.map((zone) => renderResultCard(zone, selectedZone?.id, selectedWorkplace)).join("")}
         </section>
       </aside>
     </main>
@@ -518,11 +523,28 @@ function renderResultCard(zone, selectedZoneId, workplace) {
         ${getZoneTags(zone).map((tag) => `<span>${tag}</span>`).join("")}
       </div>
 
+      ${renderRiHighlights(zone)}
+
       <div class="strength-row">
         <span>좋은 부분: ${getZoneStrengths(zone).slice(0, 2).join(" · ")}</span>
         <span>확인 필요: ${getZoneWeaknesses(zone)[0]}</span>
       </div>
     </article>
+  `;
+}
+
+function renderRiHighlights(zone) {
+  const highlights = Array.isArray(zone.riHighlights) ? zone.riHighlights.slice(0, 3) : [];
+  if (highlights.length === 0) return "";
+
+  return `
+    <div class="ri-highlight-block" aria-label="주요 리 인프라">
+      <strong>주요 리 인프라</strong>
+      <div class="ri-highlight-list">
+        ${highlights.map((highlight) => `<span>${highlight.summaryText}</span>`).join("")}
+      </div>
+      <p>주소에 리 이름이 포함된 데이터만 보조 집계한 결과입니다.</p>
+    </div>
   `;
 }
 
@@ -588,11 +610,15 @@ function renderMapEmptyState() {
   `;
 }
 
-function renderPanelEmptyState() {
+function renderPanelEmptyState(dataset = lifeZoneDataset) {
+  const message = dataset.isDatasetAvailable === false
+    ? dataset.errorMessage
+    : "생활권 데이터가 3개 미만이면 가능한 결과만 표시합니다.";
+
   return `
     <div class="panel-empty">
       <strong>계산 가능한 생활권이 없습니다.</strong>
-      <p>생활권 데이터가 3개 미만이면 가능한 결과만 표시합니다.</p>
+      <p>${message}</p>
     </div>
   `;
 }
@@ -673,6 +699,20 @@ function bindPreferenceEvents() {
 
     if (!selectedWorkplace) {
       state.validationMessage = "직장 위치와 통근 조건을 선택해주세요.";
+      render();
+      return;
+    }
+
+    if (lifeZoneDataset.isDatasetAvailable === false) {
+      state.scoredZones = [];
+      state.resultBundle = {
+        recommendedZones: [],
+        lowZone: null,
+        displayZones: []
+      };
+      state.selectedZoneId = null;
+      state.validationMessage = "";
+      state.view = "results";
       render();
       return;
     }

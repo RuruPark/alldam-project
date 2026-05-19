@@ -126,6 +126,16 @@ p {
   font-weight: 900;
 }
 
+.data-source-label.is-generated {
+  color: var(--teal-dark);
+  background: #e7f4ef;
+}
+
+.data-source-label.is-mock {
+  color: #765200;
+  background: #fff5d4;
+}
+
 .segment-button,
 .map-filter,
 .secondary-button,
@@ -1069,6 +1079,42 @@ p {
   color: #49594f;
   font-size: 12px;
   font-weight: 900;
+}
+
+.ri-highlight-block {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid #dce8e2;
+  border-radius: 8px;
+  background: #fbfdfb;
+}
+
+.ri-highlight-block strong {
+  color: var(--teal-dark);
+  font-size: 13px;
+}
+
+.ri-highlight-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ri-highlight-list span {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #eef6f1;
+  color: #3f574b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.ri-highlight-block p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .strength-row {

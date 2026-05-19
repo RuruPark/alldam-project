@@ -137,6 +137,14 @@ export function buildDensityContext(lifeZones = []) {
 }
 
 export function calculateTransportScore(zone) {
+  const generatedScore = getGeneratedScore(zone, "trafficInfraScore");
+  if (generatedScore !== null) {
+    return {
+      generatedInfraScore: generatedScore,
+      total: generatedScore
+    };
+  }
+
   const metrics = zone.metrics ?? {};
   const railAccessibility = calculateDistanceScore(metrics.railDistanceKm, 1.5);
   const busAccessibility = calculateDistanceScore(metrics.busStopDistanceKm, 0.5);
@@ -154,6 +162,14 @@ export function calculateTransportScore(zone) {
 }
 
 export function calculateLivingScore(zone, densityContext = buildDensityContext([zone])) {
+  const generatedScore = getGeneratedScore(zone, "livingInfraScore");
+  if (generatedScore !== null) {
+    return {
+      generatedInfraScore: generatedScore,
+      total: generatedScore
+    };
+  }
+
   const metrics = zone.metrics ?? {};
   const nearestLibraryDistanceScore = calculateDistanceScore(metrics.nearestLibraryDistanceKm, 1.5);
   const libraryDensityScore = densityContext.libraryDensityScores?.get(zone.id) ?? 0;
@@ -180,6 +196,14 @@ export function calculateLivingScore(zone, densityContext = buildDensityContext(
 }
 
 export function calculateSafetyMedicalScore(zone, densityContext = buildDensityContext([zone])) {
+  const generatedScore = getGeneratedScore(zone, "safetyMedicalScore");
+  if (generatedScore !== null) {
+    return {
+      generatedInfraScore: generatedScore,
+      total: generatedScore
+    };
+  }
+
   const metrics = zone.metrics ?? {};
   const nearestPharmacyDistanceScore = calculateDistanceScore(metrics.pharmacyDistanceKm, 1);
   const pharmacyDensityScore = densityContext.pharmacyDensityScores?.get(zone.id) ?? 0;
@@ -203,6 +227,13 @@ export function calculateSafetyMedicalScore(zone, densityContext = buildDensityC
     policeSubstationAccessibility,
     total: round1(clamp(total))
   };
+}
+
+function getGeneratedScore(zone, key) {
+  if (!zone?.isGenerated) return null;
+
+  const score = Number(zone[key]);
+  return Number.isFinite(score) ? round1(clamp(score)) : null;
 }
 
 export function calculateLifeZoneScores(lifeZones = [], preference = {}) {

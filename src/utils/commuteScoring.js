@@ -264,8 +264,8 @@ function getSafeMinutes(value) {
 
 function resolveBaseScore(lifeZone = {}) {
   const candidates = [
-    lifeZone.baseScore,
     lifeZone.totalScore,
+    lifeZone.baseScore,
     lifeZone.score,
     lifeZone.finalScore
   ];
