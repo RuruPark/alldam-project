@@ -6,6 +6,8 @@ import {
   isCommuteRecommendedCandidate
 } from "./commuteFeasibility.js";
 
+export const MIN_TARGET_MINUTES = 10;
+export const MAX_TARGET_MINUTES = 90;
 const DEFAULT_TARGET_MINUTES = 40;
 const DEFAULT_IMPORTANCE = "보통";
 
@@ -80,7 +82,7 @@ export function selectActualCommuteMinutes({ commuteTimes = {}, transportMode } 
   const modeKey = getCommuteTimeKey(normalizedMode);
   const selectedMinutes = getSafeMinutes(commuteTimes[modeKey]);
 
-  if (selectedMinutes !== null && normalizedMode !== "아직 모름") {
+  if (normalizedMode !== "아직 모름" && modeKey) {
     return selectedMinutes;
   }
 
@@ -161,15 +163,18 @@ export function applyCommuteToLifeZoneScores(scoredZones = [], workplace, commut
   return scoredZones.map((zone) => {
     const commute = buildCommuteSummary(workplace, zone, commutePreference);
     const baseScore = resolveBaseScore(zone);
+    const finalScoreWithCommute = commute.isCommuteScoreApplied
+      ? calculateFinalScoreWithCommute({
+          baseScore,
+          commuteFitScore: commute.fitScore,
+          commuteImportance: commute.commuteImportance
+        })
+      : baseScore;
 
     return {
       ...zone,
       baseScore,
-      finalScoreWithCommute: calculateFinalScoreWithCommute({
-        baseScore,
-        commuteFitScore: commute.fitScore,
-        commuteImportance: commute.commuteImportance
-      }),
+      finalScoreWithCommute,
       commute
     };
   });
@@ -191,6 +196,8 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = []) {
   const farCandidates = sortedZones.filter((zone) => getZoneFeasibilityStatus(zone) === "far");
   const unrealisticCandidates = sortedZones.filter((zone) => getZoneFeasibilityStatus(zone) === "unrealistic");
   const selectedCandidates = [];
+  const isCarMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "car");
+  const hasAppliedCommuteScore = scoredLifeZones.some((zone) => zone.commute?.isCommuteScoreApplied === true);
 
   addUniqueZones(selectedCandidates, preferredCandidates);
   addUniqueZones(selectedCandidates, farCandidates, 2);
@@ -224,9 +231,7 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = []) {
     recommendedZones,
     lowZone,
     displayZones,
-    commuteFeasibilityNotice: usedScoreFallback
-      ? "선택한 통근 조건에 맞는 후보가 부족해 인프라 점수가 높은 후보를 함께 표시합니다."
-      : null,
+    commuteFeasibilityNotice: createCommuteNotice({ usedScoreFallback, isCarMode, hasAppliedCommuteScore }),
     commuteFeasibilitySummary: createCommuteFeasibilitySummary(scoredLifeZones, { usedScoreFallback })
   };
 }
@@ -235,15 +240,21 @@ export function buildCommuteSummary(workplace, lifeZone, commutePreference = {})
   const commuteMode = commutePreference.commuteMode ?? commutePreference.transportMode ?? "unknown";
   const commuteImportance = commutePreference.commuteImportance ?? DEFAULT_IMPORTANCE;
   const targetMinutes = normalizeTargetMinutes(commutePreference.targetMinutes);
+  const modeKey = getCommuteTimeKey(normalizeTransportMode(commuteMode));
   const actualMinutes = selectActualCommuteMinutes({
     commuteTimes,
     transportMode: commuteMode
   });
-  const fitScore = calculateCommuteFitScore({
-    actualMinutes,
-    targetMinutes,
-    commuteImportance
-  });
+  const isCarMode = modeKey === "car";
+  const isDrivingActualApiValue = commuteTimes.driving?.isActualApiValue === true;
+  const isCommuteScoreApplied = !isCarMode || isDrivingActualApiValue;
+  const fitScore = isCommuteScoreApplied
+    ? calculateCommuteFitScore({
+        actualMinutes,
+        targetMinutes,
+        commuteImportance
+      })
+    : null;
   const feasibilityStatus = getCommuteFeasibilityStatus({
     actualMinutes,
     targetMinutes,
@@ -263,7 +274,11 @@ export function buildCommuteSummary(workplace, lifeZone, commutePreference = {})
     feasibilityLabel: getCommuteFeasibilityLabel(feasibilityStatus),
     isRecommendedCandidate: isCommuteRecommendedCandidate(feasibilityStatus),
     statusLabel: getCommuteStatusLabel(actualMinutes, targetMinutes),
-    isEstimated: true
+    isEstimated: true,
+    isCommuteScoreApplied,
+    isDrivingActualApiValue,
+    drivingApiStatus: commuteTimes.driving?.apiStatus ?? "unavailable",
+    drivingMessage: commuteTimes.driving?.message ?? null
   };
 }
 
@@ -282,7 +297,7 @@ export function getCommuteStatusLabel(actualMinutes, targetMinutes) {
 export function normalizeTargetMinutes(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue) || numericValue <= 0) return DEFAULT_TARGET_MINUTES;
-  return Math.round(clamp(numericValue, 1, 240));
+  return Math.round(clamp(numericValue, MIN_TARGET_MINUTES, MAX_TARGET_MINUTES));
 }
 
 export function normalizeCommuteImportance(commuteImportance) {
@@ -364,6 +379,16 @@ function getZoneFeasibilityStatus(zone = {}) {
 
 function isPreferredCommuteStatus(status) {
   return status === "withinTarget" || status === "acceptable";
+}
+
+function createCommuteNotice({ usedScoreFallback, isCarMode, hasAppliedCommuteScore }) {
+  if (isCarMode && !hasAppliedCommuteScore) {
+    return "자동차 길찾기 정보를 불러오지 못해 통근 조건은 반영하지 않았습니다.";
+  }
+
+  return usedScoreFallback
+    ? "선택한 통근 조건에 맞는 후보가 부족해 인프라 점수가 높은 후보를 함께 표시합니다."
+    : null;
 }
 function normalizeCommuteFitInput(input, legacyTargetMinutes, legacyCommuteImportance) {
   if (typeof input === "object" && input !== null) {

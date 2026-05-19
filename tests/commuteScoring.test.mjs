@@ -92,14 +92,21 @@ test("selectActualCommuteMinutes uses the selected transport mode", () => {
   assert.equal(selectActualCommuteMinutes({ commuteTimes, transportMode: "아직 모름" }), 28);
 });
 
-test("selectActualCommuteMinutes falls back to the shortest available value", () => {
+test("selectActualCommuteMinutes does not replace explicit car mode with other modes", () => {
   assert.equal(selectActualCommuteMinutes({
     commuteTimes: { transit: 37, walk: 72 },
-    transportMode: "자동차"
+    transportMode: "car"
+  }), null);
+});
+
+test("selectActualCommuteMinutes falls back to the shortest available value for unknown mode", () => {
+  assert.equal(selectActualCommuteMinutes({
+    commuteTimes: { transit: 37, walk: 72 },
+    transportMode: "unknown"
   }), 37);
   assert.equal(selectActualCommuteMinutes({
     commuteTimes: {},
-    transportMode: "아직 모름"
+    transportMode: "unknown"
   }), null);
 });
 
@@ -131,14 +138,14 @@ test("applyCommuteScoringToLifeZones adds commute scoring fields and sorts by fi
     workplace,
     targetMinutes: 40,
     commuteImportance: "보통",
-    transportMode: "자동차"
+    transportMode: "transit"
   });
 
   assert.equal(result.length, 2);
   assert.equal(result[0].id, "near");
   assert.ok(result[0].finalScoreWithCommute >= result[1].finalScoreWithCommute);
   assert.equal(result[0].totalScore, 90);
-  assert.equal(typeof result[0].commuteTimes.car, "number");
+  assert.equal(result[0].commuteTimes.car, null);
   assert.equal(result[0].commuteTimes.isFallback, true);
   assert.equal(result[0].commuteTimes.provider, "distance-fallback");
   assert.equal(typeof result[0].commuteFitScore, "number");

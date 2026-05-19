@@ -1,7 +1,4 @@
 import {
-  cheonanAsanEmdBoundaryGeoJson
-} from "../data/cheonanAsanEmdBoundaries.js";
-import {
   findWorkplaceCenterByCode,
   getDefaultWorkplaceOptionByDataMode,
   getWorkplaceCitiesByDataMode,
@@ -17,6 +14,8 @@ import {
   applyCommuteToLifeZoneScores,
   COMMUTE_MODE_LABELS,
   getTopAndLowZonesWithCommuteFeasibility,
+  MAX_TARGET_MINUTES,
+  MIN_TARGET_MINUTES,
   normalizeTargetMinutes
 } from "../utils/commuteScoring.js";
 import { getVisibleRiHighlightSentences } from "../utils/riHighlights.js";
@@ -100,7 +99,8 @@ const state = {
   scoredZones: [],
   resultBundle: null,
   selectedZoneId: null,
-  shouldFocusSelectedZoneOnMap: false
+  shouldFocusSelectedZoneOnMap: false,
+  pendingResultScrollZoneId: null
 };
 
 let appRoot = null;
@@ -120,6 +120,7 @@ function render() {
   if (state.view === "results") {
     bindResultEvents();
     initializeOptionalNaverMap();
+    alignPendingResultCardInPanel();
   } else {
     bindPreferenceEvents();
   }
@@ -131,17 +132,15 @@ function renderPreferenceScreen() {
       <section class="preference-workspace" aria-labelledby="preference-title">
         <div class="preference-copy">
           <p class="eyebrow">Cheonan · Asan Life Zone</p>
-          <h1 id="preference-title">생활권 추천 조건 설정</h1>
+          <h1 id="preference-title">천안 아산 맞춤형 생활권 추천 서비스</h1>
           <p class="intro">중요하게 생각하는 생활 조건과 직장 위치를 선택하면 천안·아산 생활권을 추천합니다.</p>
           <small class="data-source-label ${lifeZoneDataset.sourceType === "mock" ? "is-mock" : "is-generated"}">
             ${lifeZoneDataset.sourceLabel}
           </small>
-          <small class="dataset-detail">${getDatasetDetailText()}</small>
         </div>
 
         <section class="preference-section" aria-labelledby="infra-preference-title">
           <div class="section-heading">
-            <p class="eyebrow">생활 인프라 선호도</p>
             <h2 id="infra-preference-title">어떤 생활 조건을 중요하게 보나요?</h2>
           </div>
           <div class="preference-card-list">
@@ -154,7 +153,6 @@ function renderPreferenceScreen() {
 
       <footer class="preference-cta" aria-label="생활권 점수 계산">
         <div>
-          <p>입력한 조건을 기준으로 추천 생활권을 보여줍니다.</p>
           ${state.validationMessage ? `<span class="form-message" role="alert">${state.validationMessage}</span>` : ""}
         </div>
         <button class="primary-cta" type="button" data-calculate aria-label="생활권 점수 계산하기">
@@ -250,27 +248,18 @@ function renderWorkplaceCommuteSection() {
         <div class="field-group full-width">
           <div class="field-label-row">
             <span>희망 통근시간</span>
-            <strong>${state.commutePreference.targetMinutes}분</strong>
           </div>
           <div class="range-row">
             <input
               type="range"
-              min="10"
-              max="120"
+              min="${MIN_TARGET_MINUTES}"
+              max="${MAX_TARGET_MINUTES}"
               step="1"
               value="${state.commutePreference.targetMinutes}"
               data-commute-target-range
               aria-label="희망 통근시간 슬라이더"
             />
-            <input
-              type="number"
-              min="10"
-              max="120"
-              step="1"
-              value="${state.commutePreference.targetMinutes}"
-              data-commute-target-number
-              aria-label="희망 통근시간 직접 입력"
-            />
+            <span class="commute-target-value" data-commute-target-display>${state.commutePreference.targetMinutes}분</span>
           </div>
           <p class="helper-text">희망하는 통근시간에 가까운 생활권을 함께 고려합니다.</p>
         </div>
@@ -360,26 +349,15 @@ function renderResultScreen() {
           </button>
         </div>
 
-        <section class="preference-readout" aria-label="사용자 선호도 요약">
-          <h2>사용자 선호도 요약</h2>
-          <div class="readout-grid">
-            ${AXES.map((axis) => `
-              <div>
-                <span>${axis.tabLabel}</span>
-                <strong>${getImportanceLabel(state.preferences[axis.preferenceKey])}</strong>
-              </div>
-            `).join("")}
-          </div>
-        </section>
-
-        ${selectedWorkplace ? renderCommuteReadout(selectedWorkplace) : ""}
-        ${bundle.commuteFeasibilityNotice ? renderCommuteFeasibilityNotice(bundle.commuteFeasibilityNotice) : ""}
-
         <div class="result-count">추천 ${bundle.recommendedZones.length}개 · 비추천 ${bundle.lowZone ? 1 : 0}개</div>
 
         <section class="zone-card-list" role="listbox" aria-label="생활권 결과 목록">
           ${displayZones.length === 0 ? renderPanelEmptyState(lifeZoneDataset) : displayZones.map((zone) => renderResultCard(zone, selectedZone?.id, selectedWorkplace)).join("")}
         </section>
+
+        ${bundle.commuteFeasibilityNotice ? renderCommuteFeasibilityNotice(bundle.commuteFeasibilityNotice) : ""}
+        ${renderPreferenceReadout()}
+        ${selectedWorkplace ? renderCommuteReadout(selectedWorkplace) : ""}
       </aside>
     </main>
   `;
@@ -449,7 +427,7 @@ function renderMarkerTooltip(zone) {
     <span class="marker-tooltip">
       <strong>${zone.name}</strong>
       <span>${zone.grade} 등급</span>
-      <span>자동차 약 ${formatMinutes(zone.commute.commuteTimes.car)}분</span>
+      ${renderCarTooltipLine(zone.commute)}
       <span>대중교통 약 ${formatMinutes(zone.commute.commuteTimes.transit)}분</span>
       <span>도보 약 ${formatMinutes(zone.commute.commuteTimes.walk)}분</span>
       <span>${zone.commute.feasibilityLabel ?? zone.commute.statusLabel}</span>
@@ -528,22 +506,68 @@ function renderRiHighlights(zone) {
 
 function renderCommuteSummaryCard(zone, workplace) {
   const commute = zone.commute;
+  const selectedSummary = getSelectedCommuteSummary(commute);
 
   return `
     <div class="commute-summary-card">
       <div class="commute-main">
-        <strong>${commute.commuteModeLabel} 약 ${formatMinutes(commute.actualMinutes)}분</strong>
-        <span>${commute.feasibilityLabel ?? commute.statusLabel} · 희망 ${commute.targetMinutes}분 · 추정값</span>
+        <strong>${selectedSummary.title}</strong>
+        <span>${selectedSummary.meta}</span>
       </div>
       <p>${formatWorkplaceName(workplace)} 직장 기준 ${commute.commuteModeLabel} 예상 통근시간입니다.</p>
       <div class="commute-time-grid" aria-label="통근수단별 예상 소요시간">
-        <span>자동차 약 ${formatMinutes(commute.commuteTimes.car)}분</span>
+        ${renderCarCommuteTimeItem(commute)}
         <span>대중교통 약 ${formatMinutes(commute.commuteTimes.transit)}분</span>
         <span>도보 약 ${formatMinutes(commute.commuteTimes.walk)}분</span>
       </div>
+      ${renderDrivingCommuteStatus(commute)}
       ${renderNaverDirectionsLink(zone, workplace)}
     </div>
   `;
+}
+
+function getSelectedCommuteSummary(commute) {
+  const isCarMode = commute.commuteMode === "car";
+
+  if (isCarMode && !commute.isDrivingActualApiValue) {
+    return {
+      title: "자동차 길찾기 정보 없음",
+      meta: `희망 ${commute.targetMinutes}분 · 통근 조건 미반영`
+    };
+  }
+
+  return {
+    title: `${commute.commuteModeLabel} 약 ${formatMinutes(commute.actualMinutes)}분`,
+    meta: `${commute.feasibilityLabel ?? commute.statusLabel} · 희망 ${commute.targetMinutes}분 · ${isCarMode ? "네이버 길찾기 기준" : "추정값"}`
+  };
+}
+
+function renderCarCommuteTimeItem(commute) {
+  if (commute.isDrivingActualApiValue) {
+    return `<span>자동차 약 ${formatMinutes(commute.commuteTimes.car)}분<small>네이버 길찾기 기준</small></span>`;
+  }
+
+  return `<span class="is-unavailable">자동차 길찾기 불러오기 실패</span>`;
+}
+
+function renderCarTooltipLine(commute) {
+  if (commute.isDrivingActualApiValue) {
+    return `<span>자동차 약 ${formatMinutes(commute.commuteTimes.car)}분</span>`;
+  }
+
+  return `<span>자동차 길찾기 정보 없음</span>`;
+}
+
+function renderDrivingCommuteStatus(commute) {
+  if (commute.isDrivingActualApiValue) {
+    return `<p class="commute-api-status is-success">자동차 통근시간은 네이버 길찾기 기준입니다.</p>`;
+  }
+
+  if (commute.commuteMode !== "car") {
+    return "";
+  }
+
+  return `<p class="commute-api-status is-failed">${commute.drivingMessage ?? "자동차 길찾기 정보를 불러오지 못했습니다."}</p>`;
 }
 
 function renderNaverDirectionsLink(zone, workplace) {
@@ -587,6 +611,22 @@ function renderCommuteReadout(workplace) {
           <span>주 통근수단</span>
           <strong>${getCommuteModeLabel(state.commutePreference.commuteMode)}</strong>
         </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderPreferenceReadout() {
+  return `
+    <section class="preference-readout" aria-label="사용자 선호도 요약">
+      <h2>사용자 선호도 요약</h2>
+      <div class="readout-grid">
+        ${AXES.map((axis) => `
+          <div>
+            <span>${axis.tabLabel}</span>
+            <strong>${getImportanceLabel(state.preferences[axis.preferenceKey])}</strong>
+          </div>
+        `).join("")}
       </div>
     </section>
   `;
@@ -753,7 +793,7 @@ function bindPreferenceEvents() {
 
 function bindTargetMinuteInputs() {
   const rangeInput = appRoot.querySelector("[data-commute-target-range]");
-  const numberInput = appRoot.querySelector("[data-commute-target-number]");
+  const displayElement = appRoot.querySelector("[data-commute-target-display]");
   const updateTarget = (value) => {
     const targetMinutes = normalizeTargetMinutes(value);
 
@@ -763,25 +803,19 @@ function bindTargetMinuteInputs() {
     };
     state.validationMessage = "";
     if (rangeInput) rangeInput.value = String(targetMinutes);
-    if (numberInput) numberInput.value = String(targetMinutes);
-    appRoot.querySelector(".field-label-row strong")?.replaceChildren(`${targetMinutes}분`);
+    displayElement?.replaceChildren(`${targetMinutes}분`);
   };
 
   rangeInput?.addEventListener("input", (event) => updateTarget(event.target.value));
-  numberInput?.addEventListener("input", (event) => updateTarget(event.target.value));
-  numberInput?.addEventListener("blur", (event) => updateTarget(event.target.value));
 }
 
 function initializeOptionalNaverMap() {
   const fallbackMap = appRoot?.querySelector(".mock-map");
   if (!fallbackMap) return;
 
-  const boundaryDisplay = getBoundaryDisplayText();
   const clientId = getNaverMapClientId();
   if (!clientId) {
     addMapStatusBadge(fallbackMap, "fallback", "기본 지도 표시 중", "실제 지도 연결 전에도 위치 비교가 가능합니다.");
-    addMapBoundaryNote(fallbackMap, boundaryDisplay.fallbackNote);
-    addMapRouteNote(fallbackMap);
     return;
   }
 
@@ -793,11 +827,6 @@ function initializeOptionalNaverMap() {
   mapShell.className = "naver-map-shell is-loading";
   mapShell.innerHTML = `
     <div class="naver-map-canvas" data-naver-map-canvas role="region" aria-label="Naver map"></div>
-    <div class="map-provider-badge is-live" data-map-provider-badge>
-      <strong>Naver Maps</strong>
-      <span>${boundaryDisplay.badge}</span>
-    </div>
-    <p class="map-route-note">지도 연결선은 실제 길찾기 경로가 아니라 위치 비교용 선입니다.</p>
   `;
   fallbackMap.insertAdjacentElement("beforebegin", mapShell);
 
@@ -818,7 +847,6 @@ function initializeOptionalNaverMap() {
     if (!mapShell.isConnected) return;
 
     mapShell.classList.remove("is-loading");
-    setMapProviderBadge(mapShell.querySelector("[data-map-provider-badge]"), "Naver Maps", boundaryDisplay.badge);
     fallbackMap.classList.add("is-map-fallback-hidden");
   }).catch(() => {
     // Fallback is handled in showFallbackMapAfterNaverError.
@@ -830,24 +858,6 @@ function showFallbackMapAfterNaverError(mapShell, fallbackMap, error) {
   mapShell.remove();
   fallbackMap.classList.remove("is-map-fallback-hidden");
   addMapStatusBadge(fallbackMap, "fallback", "기본 지도 표시 중", "실제 지도를 불러오지 못해 위치 비교 지도로 표시합니다.");
-  addMapBoundaryNote(fallbackMap, getBoundaryDisplayText().fallbackNote);
-  addMapRouteNote(fallbackMap);
-}
-
-function getBoundaryDisplayText() {
-  const metadata = cheonanAsanEmdBoundaryGeoJson.metadata ?? {};
-
-  if (metadata.isSample === false) {
-    return {
-      badge: "행정동 경계",
-      fallbackNote: "행정동 경계는 실제 지도 모드에서 표시됩니다."
-    };
-  }
-
-  return {
-    badge: "시연용 읍면동 경계",
-    fallbackNote: "읍면동 경계는 실제 지도 모드에서 표시됩니다. 현재 경계 데이터는 시연용입니다."
-  };
 }
 
 function addMapStatusBadge(mapElement, mode, title, detail) {
@@ -862,36 +872,6 @@ function addMapStatusBadge(mapElement, mode, title, detail) {
   detailElement.textContent = detail;
   badge.append(titleElement, detailElement);
   mapElement.appendChild(badge);
-}
-
-function setMapProviderBadge(badge, title, detail) {
-  if (!badge) return;
-
-  const titleElement = document.createElement("strong");
-  const detailElement = document.createElement("span");
-  titleElement.textContent = title;
-  detailElement.textContent = detail;
-  badge.replaceChildren(titleElement, detailElement);
-}
-
-function addMapBoundaryNote(mapElement, message) {
-  if (mapElement.querySelector("[data-map-boundary-note]")) return;
-
-  const note = document.createElement("p");
-  note.className = "map-boundary-note";
-  note.dataset.mapBoundaryNote = "";
-  note.textContent = message;
-  mapElement.appendChild(note);
-}
-
-function addMapRouteNote(mapElement) {
-  if (mapElement.querySelector("[data-map-route-note]")) return;
-
-  const note = document.createElement("p");
-  note.className = "map-route-note";
-  note.dataset.mapRouteNote = "";
-  note.textContent = "지도 연결선은 실제 길찾기 경로가 아니라 위치 비교용 선입니다.";
-  mapElement.appendChild(note);
 }
 
 function getNaverMapClientId() {
@@ -946,6 +926,7 @@ function bindResultEvents() {
     element.addEventListener("click", () => {
       state.selectedZoneId = element.dataset.zoneId;
       state.shouldFocusSelectedZoneOnMap = true;
+      state.pendingResultScrollZoneId = element.dataset.zoneId;
       render();
     });
     element.addEventListener("keydown", (event) => {
@@ -953,6 +934,7 @@ function bindResultEvents() {
       event.preventDefault();
       state.selectedZoneId = element.dataset.zoneId;
       state.shouldFocusSelectedZoneOnMap = true;
+      state.pendingResultScrollZoneId = element.dataset.zoneId;
       render();
     });
   });
@@ -1015,6 +997,25 @@ function getHorizontalKeyDirection(event) {
 function focusAfterRender(selector) {
   requestAnimationFrame(() => {
     appRoot?.querySelector(selector)?.focus();
+  });
+}
+
+function alignPendingResultCardInPanel() {
+  const zoneId = state.pendingResultScrollZoneId;
+  if (!zoneId) return;
+
+  state.pendingResultScrollZoneId = null;
+  requestAnimationFrame(() => {
+    const panel = appRoot?.querySelector(".result-panel");
+    const selectedCard = appRoot?.querySelector(".zone-card.is-selected");
+    if (!panel || !selectedCard) return;
+
+    const panelRect = panel.getBoundingClientRect();
+    const cardRect = selectedCard.getBoundingClientRect();
+    panel.scrollTo({
+      top: panel.scrollTop + cardRect.top - panelRect.top,
+      behavior: "auto"
+    });
   });
 }
 

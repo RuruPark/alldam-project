@@ -1,3 +1,5 @@
+const MIN_TARGET_MINUTES = 10;
+const MAX_TARGET_MINUTES = 90;
 const DEFAULT_TARGET_MINUTES = 40;
 
 export const COMMUTE_FEASIBILITY_STATUSES = {
@@ -74,7 +76,7 @@ export function normalizeTransportModeForFeasibility(transportMode) {
 function normalizeTargetMinutesForFeasibility(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue) || numericValue <= 0) return DEFAULT_TARGET_MINUTES;
-  return Math.round(Math.min(240, Math.max(1, numericValue)));
+  return Math.round(Math.min(MAX_TARGET_MINUTES, Math.max(MIN_TARGET_MINUTES, numericValue)));
 }
 
 function round1(value) {

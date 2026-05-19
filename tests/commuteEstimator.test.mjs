@@ -26,18 +26,20 @@ test("calculateHaversineKm returns zero for the same point", () => {
   assert.ok(distanceKm < 0.001);
 });
 
-test("estimateCommuteTimes returns all commute modes", () => {
+test("estimateCommuteTimes keeps car unavailable without actual API data", () => {
   const result = estimateCommuteTimes(workplace, lifeZone);
 
-  assert.equal(typeof result.car, "number");
+  assert.equal(result.car, null);
+  assert.equal(result.driving.provider, "naver-directions5");
+  assert.equal(result.driving.isActualApiValue, false);
   assert.equal(typeof result.transit, "number");
   assert.equal(typeof result.walk, "number");
 });
 
-test("estimated commute times are non-negative integers", () => {
+test("estimated transit and walk commute times are non-negative integers", () => {
   const result = estimateCommuteTimes(workplace, lifeZone);
 
-  [result.car, result.transit, result.walk].forEach((minutes) => {
+  [result.transit, result.walk].forEach((minutes) => {
     assert.equal(Number.isInteger(minutes), true);
     assert.ok(minutes >= 0);
   });

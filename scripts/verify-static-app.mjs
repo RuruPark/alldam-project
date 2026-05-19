@@ -31,6 +31,7 @@ const requiredFiles = [
   "src/utils/addressParser.js",
   "src/utils/naverMapLoader.js",
   "src/utils/naverDirectionsUrl.js",
+  "src/utils/drivingCommuteApi.js",
   "src/utils/geoJsonPolygon.js",
   "src/utils/cheonanAsanMapBounds.js",
   "src/utils/pointInPolygon.js",
@@ -48,9 +49,12 @@ const requiredFiles = [
   ".env.example",
   "tests/cheonanAsanMapBounds.test.mjs",
   "tests/commuteFeasibility.test.mjs",
+  "tests/commuteTimeInput.test.mjs",
+  "tests/drivingApiActualOnly.test.mjs",
   "tests/mapFocusBehavior.test.mjs",
   "tests/naverDirectionsUrl.test.mjs",
-  "tests/riHighlights.test.mjs"
+  "tests/riHighlights.test.mjs",
+  "tests/uiTextCleanup.test.mjs"
 ];
 
 await Promise.all(requiredFiles.map((file) => readFile(new URL(`../${file}`, import.meta.url), "utf8")));
@@ -63,6 +67,9 @@ const naverMapView = await readFile(new URL("../src/components/NaverMapView.js",
 const lifeZoneRepository = await readFile(new URL("../src/data/lifeZoneRepository.js", import.meta.url), "utf8");
 const workplaceOptions = await readFile(new URL("../src/data/workplaceOptions.js", import.meta.url), "utf8");
 const commuteFeasibility = await readFile(new URL("../src/utils/commuteFeasibility.js", import.meta.url), "utf8");
+const commuteEstimator = await readFile(new URL("../src/utils/commuteEstimator.js", import.meta.url), "utf8");
+const commuteScoring = await readFile(new URL("../src/utils/commuteScoring.js", import.meta.url), "utf8");
+const drivingCommuteApi = await readFile(new URL("../src/utils/drivingCommuteApi.js", import.meta.url), "utf8");
 const cheonanAsanMapBounds = await readFile(new URL("../src/utils/cheonanAsanMapBounds.js", import.meta.url), "utf8");
 const naverDirectionsUrl = await readFile(new URL("../src/utils/naverDirectionsUrl.js", import.meta.url), "utf8");
 const publicConfigIndex = indexHtml.indexOf("./public-config.js");
@@ -196,6 +203,22 @@ if (!appJs.includes("buildNaverDirectionsUrl") || !appJs.includes("네이버 길
   throw new Error("app.js must render Naver directions links from workplace to life zone.");
 }
 
+if (!drivingCommuteApi.includes("isActualApiValue") || !drivingCommuteApi.includes("durationMinutes: null")) {
+  throw new Error("drivingCommuteApi.js must distinguish actual Naver driving values from unavailable values.");
+}
+
+if (!commuteEstimator.includes("car: null") || commuteEstimator.includes("car: estimateCarMinutes")) {
+  throw new Error("commuteEstimator.js must not place distance fallback car minutes into commuteTimes.car.");
+}
+
+if (!commuteScoring.includes("MIN_TARGET_MINUTES = 10") || !commuteScoring.includes("MAX_TARGET_MINUTES = 90")) {
+  throw new Error("commuteScoring.js must clamp target commute minutes to 10-90.");
+}
+
+if (!appJs.includes("data-commute-target-display") || appJs.includes("data-commute-target-number")) {
+  throw new Error("app.js must show target commute minutes as text without the old number box.");
+}
+
 if (appJs.includes("getNaverMapSearchUrl") || appJs.includes("map-filters")) {
   throw new Error("app.js must not render the old map search link or top map filter buttons.");
 }
@@ -209,6 +232,12 @@ if (appJs.includes("지역, 역, 학교") || appJs.includes("지역, 역, 학교
 }
 
 [
+  "Naver Maps 행정동 경계",
+  "지도 연결선은 실제 길찾기 경로가 아니라 위치 비교용 선입니다.",
+  "천안·아산 행정동 생활권 48개 전체 후보 기준",
+  "생활 인프라 선호도",
+  "입력한 조건을 기준으로 추천 생활권을 보여줍니다.",
+  "생활권 추천 조건 설정",
   "실제 전처리 csv의 인프라 분포로 계산했습니다",
   "실제 전처리 CSV의 인프라 분포로 계산했습니다",
   "실제 csv 기준",

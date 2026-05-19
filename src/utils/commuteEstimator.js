@@ -1,4 +1,8 @@
 import { calculateHaversineKm } from "./geoDistance.js";
+import {
+  applyDrivingCommuteResultToTimes,
+  createUnavailableDrivingCommuteResult
+} from "./drivingCommuteApi.js";
 
 const CAR_DISTANCE_FACTOR = 1.35;
 const TRANSIT_DISTANCE_FACTOR = 1.45;
@@ -21,17 +25,21 @@ export function estimateWalkMinutes(straightDistanceKm) {
   return Math.round(safeDistanceKm(straightDistanceKm) / WALK_AVERAGE_SPEED_KMH * 60);
 }
 
-export function estimateCommuteTimes(workplace, lifeZone) {
+export function estimateCommuteTimes(workplace, lifeZone, options = {}) {
   const straightDistanceKm = calculateHaversineKm(workplace, normalizeLifeZoneCenter(lifeZone));
+  const drivingResult = options.drivingCommuteResult ??
+    lifeZone?.drivingCommute ??
+    lifeZone?.commuteTimes?.driving ??
+    createUnavailableDrivingCommuteResult();
 
-  return {
-    car: estimateCarMinutes(straightDistanceKm),
+  return applyDrivingCommuteResultToTimes({
+    car: null,
     transit: estimateTransitMinutes(straightDistanceKm),
     walk: estimateWalkMinutes(straightDistanceKm),
     straightDistanceKm,
     isFallback: true,
     provider: "distance-fallback"
-  };
+  }, drivingResult);
 }
 
 function normalizeLifeZoneCenter(lifeZone) {
