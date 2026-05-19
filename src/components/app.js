@@ -842,14 +842,14 @@ function getBoundaryDisplayText() {
   if (metadata.isSample === false) {
     return {
       badge: "행정동 경계",
-      liveNote: "국토교통부 행정동 경계를 기준으로 표시하며, 천안·아산 외 지역은 흐리게 표시됩니다.",
+      liveNote: "지도는 천안·아산 생활권 중심으로 제한되며, 외 지역은 흐리게 표시됩니다.",
       fallbackNote: "행정동 경계는 실제 지도 모드에서 표시됩니다."
     };
   }
 
   return {
     badge: "시연용 읍면동 경계",
-    liveNote: "실제 행정경계가 아닌 시연용 경계입니다.",
+    liveNote: "지도는 천안·아산 생활권 중심으로 제한되며, 시연용 경계 외 지역은 흐리게 표시됩니다.",
     fallbackNote: "읍면동 경계는 실제 지도 모드에서 표시됩니다. 현재 경계 데이터는 시연용입니다."
   };
 }

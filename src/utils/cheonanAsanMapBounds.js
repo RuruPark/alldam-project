@@ -88,6 +88,38 @@ export function clampPointToBounds(point, bounds) {
   };
 }
 
+export function doBoundsIntersect(boundsA, boundsB) {
+  if (!isValidBounds(boundsA) || !isValidBounds(boundsB)) return false;
+
+  return boundsA.minLat <= boundsB.maxLat &&
+    boundsA.maxLat >= boundsB.minLat &&
+    boundsA.minLng <= boundsB.maxLng &&
+    boundsA.maxLng >= boundsB.minLng;
+}
+
+export function getNaverMapViewportBounds(map) {
+  const rawBounds = map?.getBounds?.();
+  const minPoint = rawBounds?.getMin?.() ?? rawBounds?.getSW?.() ?? rawBounds?.min ?? rawBounds?._min;
+  const maxPoint = rawBounds?.getMax?.() ?? rawBounds?.getNE?.() ?? rawBounds?.max ?? rawBounds?._max;
+  const minLatLng = normalizeLatLngLike(minPoint);
+  const maxLatLng = normalizeLatLngLike(maxPoint);
+
+  if (!minLatLng || !maxLatLng) return null;
+
+  return {
+    minLat: Math.min(minLatLng.lat, maxLatLng.lat),
+    maxLat: Math.max(minLatLng.lat, maxLatLng.lat),
+    minLng: Math.min(minLatLng.lng, maxLatLng.lng),
+    maxLng: Math.max(minLatLng.lng, maxLatLng.lng)
+  };
+}
+
+export function shouldRestoreToCheonanAsan({ viewportBounds, allowedBounds } = {}) {
+  if (!isValidBounds(viewportBounds) || !isValidBounds(allowedBounds)) return false;
+
+  return !doBoundsIntersect(viewportBounds, allowedBounds);
+}
+
 export function getCheonanAsanMapBounds({ padding = DEFAULT_PADDING } = {}) {
   const boundaryBounds = calculateGeoJsonBounds(cheonanAsanEmdBoundaryGeoJson);
   const lifeZoneBounds = calculateLifeZoneBounds(generatedLifeZones);
@@ -108,6 +140,10 @@ export function getBoundsCenter(bounds) {
     lat: (bounds.minLat + bounds.maxLat) / 2,
     lng: (bounds.minLng + bounds.maxLng) / 2
   };
+}
+
+export function getCheonanAsanBoundsCenter(bounds) {
+  return getBoundsCenter(bounds);
 }
 
 export function isCheonanAsanLifeZone(lifeZone = {}) {
@@ -188,6 +224,20 @@ function isValidBounds(bounds) {
 function isValidPoint(point) {
   return Number.isFinite(Number(point?.lat ?? point?.centerLat)) &&
     Number.isFinite(Number(point?.lng ?? point?.centerLng));
+}
+
+function normalizeLatLngLike(point) {
+  if (!point) return null;
+
+  const lat = typeof point.lat === "function" ? point.lat() : point.lat ?? point.y ?? point._lat;
+  const lng = typeof point.lng === "function" ? point.lng() : point.lng ?? point.x ?? point._lng;
+
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return null;
+
+  return {
+    lat: Number(lat),
+    lng: Number(lng)
+  };
 }
 
 function clamp(value, min, max) {

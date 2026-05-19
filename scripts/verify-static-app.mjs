@@ -56,6 +56,7 @@ const naverMapView = await readFile(new URL("../src/components/NaverMapView.js",
 const lifeZoneRepository = await readFile(new URL("../src/data/lifeZoneRepository.js", import.meta.url), "utf8");
 const workplaceOptions = await readFile(new URL("../src/data/workplaceOptions.js", import.meta.url), "utf8");
 const commuteFeasibility = await readFile(new URL("../src/utils/commuteFeasibility.js", import.meta.url), "utf8");
+const cheonanAsanMapBounds = await readFile(new URL("../src/utils/cheonanAsanMapBounds.js", import.meta.url), "utf8");
 const publicConfigIndex = indexHtml.indexOf("./public-config.js");
 const mainScriptIndex = indexHtml.indexOf("./src/main.js");
 
@@ -101,6 +102,14 @@ if (!naverMapView.includes("getCheonanAsanMapBounds") || !naverMapView.includes(
 
 if (!naverMapView.includes("createOutsideMaskPolygons") || !naverMapView.includes("filterCheonanAsanMapResults")) {
   throw new Error("NaverMapView.js must mask outside Cheonan-Asan and filter map results.");
+}
+
+if (!cheonanAsanMapBounds.includes("doBoundsIntersect") || !cheonanAsanMapBounds.includes("shouldRestoreToCheonanAsan")) {
+  throw new Error("cheonanAsanMapBounds.js must detect full viewport departure from Cheonan-Asan.");
+}
+
+if (!naverMapView.includes("getNaverMapViewportBounds") || !naverMapView.includes("createBoundarySvgMaskOverlay")) {
+  throw new Error("NaverMapView.js must restore escaped map views and apply the boundary mask overlay.");
 }
 if (!commuteFeasibility.includes("getCommuteFeasibilityStatus") || !commuteFeasibility.includes("isCommuteRecommendedCandidate")) {
   throw new Error("commuteFeasibility.js must expose feasibility status helpers.");
