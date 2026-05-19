@@ -65,13 +65,14 @@ export async function createDrivingCommuteResponse({
 } = {}) {
   const clientId = String(env.NAVER_MAP_CLIENT_ID ?? "").trim();
   const clientSecret = String(env.NAVER_MAP_CLIENT_SECRET ?? "").trim();
-  const baseUrl = String(env.NAVER_DIRECTIONS_BASE_URL ?? DEFAULT_NAVER_DIRECTIONS_BASE_URL).trim();
+  const baseUrl = String(env.NAVER_DIRECTIONS_BASE_URL ?? "").trim();
   const baseDiagnostics = {
     hasClientId: clientId.length > 0,
-    hasClientSecret: clientSecret.length > 0
+    hasClientSecret: clientSecret.length > 0,
+    hasDirectionsBaseUrl: baseUrl.length > 0
   };
 
-  if (!clientId || !clientSecret) {
+  if (!clientId || !clientSecret || !baseUrl) {
     return createDrivingFailureResponse({
       errorCode: DRIVING_ERROR_CODES.MISSING_NAVER_ENV,
       diagnostics: baseDiagnostics
@@ -286,6 +287,7 @@ function sanitizeDiagnostics(diagnostics = {}) {
   return {
     hasClientId: Boolean(diagnostics.hasClientId),
     hasClientSecret: Boolean(diagnostics.hasClientSecret),
+    hasDirectionsBaseUrl: Boolean(diagnostics.hasDirectionsBaseUrl),
     naverStatusCode: Number.isFinite(Number(diagnostics.naverStatusCode))
       ? Number(diagnostics.naverStatusCode)
       : undefined,

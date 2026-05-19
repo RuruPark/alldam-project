@@ -226,7 +226,8 @@ if (
   !drivingApiCore.includes("NAVER_DIRECTIONS_FORBIDDEN") ||
   !drivingApiCore.includes("NAVER_DIRECTIONS_RATE_LIMITED") ||
   !drivingApiCore.includes("durationMinutes: null") ||
-  !drivingApiCore.includes("hasClientSecret")
+  !drivingApiCore.includes("hasClientSecret") ||
+  !drivingApiCore.includes("hasDirectionsBaseUrl")
 ) {
   throw new Error("driving API core must expose safe diagnostics and never synthesize fallback car minutes.");
 }
@@ -252,8 +253,12 @@ if (
   throw new Error("vercel-directions-setup.md must document Vercel Directions environment setup.");
 }
 
-if (!appJs.includes("panel-summary") || !appJs.includes("renderResultActions()")) {
-  throw new Error("app.js must use compact result-panel summary and move the reset action below result cards.");
+if (!appJs.includes("panel-summary") || !appJs.includes("renderResultActions()") || !appJs.includes("result-data-source-badge")) {
+  throw new Error("app.js must use compact result-panel summary, top-right source badge, and reset action below result cards.");
+}
+
+if (appJs.includes("추천 ${bundle.recommendedZones.length}개 · 비추천")) {
+  throw new Error("app.js must not show the result-count copy in the right result panel.");
 }
 
 if (!commuteEstimator.includes("car: null") || commuteEstimator.includes("car: estimateCarMinutes")) {

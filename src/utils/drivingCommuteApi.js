@@ -147,6 +147,7 @@ function sanitizeDiagnostics(diagnostics = null) {
   return {
     hasClientId: Boolean(diagnostics.hasClientId),
     hasClientSecret: Boolean(diagnostics.hasClientSecret),
+    hasDirectionsBaseUrl: Boolean(diagnostics.hasDirectionsBaseUrl),
     naverStatusCode: Number.isFinite(Number(diagnostics.naverStatusCode))
       ? Number(diagnostics.naverStatusCode)
       : null,

@@ -340,14 +340,9 @@ function renderResultScreen() {
             <p class="eyebrow">선호도 기반 생활권 비교</p>
             <h1>생활권 추천 결과</h1>
             <p class="panel-summary">입력한 생활 조건과 직장 위치를 기준으로 살펴본 결과입니다.</p>
-            <small class="data-source-label ${lifeZoneDataset.sourceType === "mock" ? "is-mock" : "is-generated"}">
-              ${lifeZoneDataset.sourceLabel}
-            </small>
-            <small class="dataset-detail">${getDatasetDetailText()}</small>
           </div>
+          ${renderResultDataSourceBadge()}
         </div>
-
-        <div class="result-count">추천 ${bundle.recommendedZones.length}개 · 비추천 ${bundle.lowZone ? 1 : 0}개</div>
 
         <section class="zone-card-list" role="listbox" aria-label="생활권 결과 목록">
           ${displayZones.length === 0 ? renderPanelEmptyState(lifeZoneDataset) : displayZones.map((zone) => renderResultCard(zone, selectedZone?.id, selectedWorkplace)).join("")}
@@ -650,6 +645,16 @@ function renderResultActions() {
         선호도 다시 설정
       </button>
     </div>
+  `;
+}
+
+function renderResultDataSourceBadge() {
+  if (lifeZoneDataset.sourceType !== "generated") return "";
+
+  return `
+    <small class="result-data-source-badge" title="제출 전 제거용 데이터 출처 확인 배지">
+      실제 전처리 CSV 기반 추천 데이터
+    </small>
   `;
 }
 
