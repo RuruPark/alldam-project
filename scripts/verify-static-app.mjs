@@ -253,8 +253,17 @@ if (
   throw new Error("vercel-directions-setup.md must document Vercel Directions environment setup.");
 }
 
-if (!appJs.includes("panel-summary") || !appJs.includes("renderResultActions()") || !appJs.includes("result-data-source-badge")) {
-  throw new Error("app.js must use compact result-panel summary, top-right source badge, and reset action below result cards.");
+if (
+  !appJs.includes("panel-summary") ||
+  !appJs.includes("renderResultActions()") ||
+  !appJs.includes("renderMapDataSourceBadge()") ||
+  !appJs.includes("result-data-source-badge")
+) {
+  throw new Error("app.js must use compact result-panel summary, map source badge, and reset action below result cards.");
+}
+
+if (appJs.includes("renderResultDataSourceBadge()")) {
+  throw new Error("app.js must not render the data source badge inside the right result panel.");
 }
 
 if (appJs.includes("추천 ${bundle.recommendedZones.length}개 · 비추천")) {

@@ -7,23 +7,32 @@ const stylesCss = await readFile(new URL("../src/styles.css", import.meta.url), 
 
 test("result reset action is rendered after result cards and before readouts", () => {
   assert.ok(appJs.includes("renderResultActions()"));
+  assert.ok(appJs.includes("renderMapDataSourceBadge()"));
   assert.ok(appJs.includes("panel-summary"));
   assert.ok(appJs.includes("result-data-source-badge"));
   assert.ok(appJs.includes("secondary-button compact"));
   assert.equal(appJs.includes("추천 ${bundle.recommendedZones.length}개 · 비추천"), false);
+  assert.equal(appJs.includes("renderResultDataSourceBadge()"), false);
 
   const cardListIndex = appJs.indexOf("zone-card-list");
   const resultActionIndex = appJs.indexOf("renderResultActions()");
   const preferenceReadoutIndex = appJs.indexOf("renderPreferenceReadout()");
+  const mapViewIndex = appJs.indexOf("map-view");
+  const mapBadgeIndex = appJs.indexOf("renderMapDataSourceBadge()");
+  const panelHeaderIndex = appJs.indexOf("panel-header");
 
   assert.ok(cardListIndex < resultActionIndex);
   assert.ok(resultActionIndex < preferenceReadoutIndex);
+  assert.ok(mapViewIndex < mapBadgeIndex);
+  assert.ok(mapBadgeIndex < panelHeaderIndex);
 });
 
 test("compact UI classes exist for the result and input panels", () => {
   assert.ok(stylesCss.includes(".panel-summary"));
   assert.ok(stylesCss.includes(".result-actions"));
   assert.ok(stylesCss.includes(".result-data-source-badge"));
+  assert.ok(stylesCss.includes(".map-data-source-badge-wrap"));
+  assert.ok(stylesCss.includes("pointer-events: none"));
   assert.ok(stylesCss.includes(".secondary-button.compact"));
   assert.ok(stylesCss.includes("padding: 14px 16px"));
   assert.ok(stylesCss.includes("min-height: 58px"));

@@ -318,6 +318,7 @@ function renderResultScreen() {
   return `
     <main class="result-screen">
       <section class="map-view" aria-label="생활권 결과 지도">
+        ${renderMapDataSourceBadge()}
         <div class="mock-map" role="region" aria-label="천안·아산 생활권 추천 위치 지도">
           <p class="sr-only">선택한 직장 읍면동과 추천 생활권, 비추천 생활권의 위치를 지도형 배경 위에 표시합니다.</p>
           <svg class="rail-overlay" viewBox="0 0 100 100" aria-hidden="true">
@@ -341,7 +342,6 @@ function renderResultScreen() {
             <h1>생활권 추천 결과</h1>
             <p class="panel-summary">입력한 생활 조건과 직장 위치를 기준으로 살펴본 결과입니다.</p>
           </div>
-          ${renderResultDataSourceBadge()}
         </div>
 
         <section class="zone-card-list" role="listbox" aria-label="생활권 결과 목록">
@@ -648,13 +648,15 @@ function renderResultActions() {
   `;
 }
 
-function renderResultDataSourceBadge() {
+function renderMapDataSourceBadge() {
   if (lifeZoneDataset.sourceType !== "generated") return "";
 
   return `
-    <small class="result-data-source-badge" title="제출 전 제거용 데이터 출처 확인 배지">
-      실제 전처리 CSV 기반 추천 데이터
-    </small>
+    <div class="map-data-source-badge-wrap" aria-hidden="true">
+      <small class="map-data-source-badge result-data-source-badge" title="제출 전 제거용 데이터 출처 확인 배지">
+        실제 전처리 CSV 기반 추천 데이터
+      </small>
+    </div>
   `;
 }
 
