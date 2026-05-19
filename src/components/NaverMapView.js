@@ -9,6 +9,14 @@ import {
   isSameEmdFeature,
   normalizeGeoJsonGeometryToRings
 } from "../utils/geoJsonPolygon.js";
+import {
+  clampPointToBounds,
+  filterCheonanAsanMapResults,
+  getBoundsCenter,
+  getCheonanAsanMapBounds,
+  isPointInsideBounds,
+  padBounds
+} from "../utils/cheonanAsanMapBounds.js";
 
 const DEFAULT_CENTER = {
   lat: 36.812,
@@ -31,18 +39,28 @@ export async function NaverMapView({
 
     const naver = await loadNaverMapScript(clientId);
     const maps = naver.maps;
-    const centerPoint = normalizePoint(workplace) ?? DEFAULT_CENTER;
+    const allowedBounds = getCheonanAsanMapBounds();
+    const filteredResults = filterCheonanAsanMapResults(results);
+    const centerPoint = clampPointToBounds(
+      normalizePoint(workplace) ?? getBoundsCenter(allowedBounds),
+      allowedBounds
+    ) ?? DEFAULT_CENTER;
     const map = new maps.Map(container, {
       center: new maps.LatLng(centerPoint.lat, centerPoint.lng),
-      zoom: 11,
+      zoom: 10,
       minZoom: 9,
+      maxZoom: 15,
       zoomControl: true,
       zoomControlOptions: {
         position: maps.Position.TOP_RIGHT
       }
     });
     const overlays = [];
+    const cleanupHandlers = [];
     const boundaryFeatures = getAllBoundaryFeatures();
+
+    overlays.push(...createOutsideMaskPolygons({ maps, map, bounds: allowedBounds }));
+    applyMapBoundsGuard({ maps, map, bounds: allowedBounds, cleanupHandlers });
 
     if (workplace) {
       const workplacePoint = normalizePoint(workplace);
@@ -82,7 +100,7 @@ export async function NaverMapView({
       }
     }
 
-    results.forEach((lifeZone, index) => {
+    filteredResults.forEach((lifeZone, index) => {
       const lifeZonePoint = normalizePoint(lifeZone);
 
       if (!lifeZonePoint) return;
@@ -129,7 +147,8 @@ export async function NaverMapView({
           strokeColor: isSelected ? "#e6a700" : "#273a66",
           strokeOpacity: isSelected ? 0.9 : 0.42,
           strokeWeight: isSelected ? 4 : 2,
-          strokeStyle: isSelected ? "solid" : "shortdash"
+          strokeStyle: isSelected ? "solid" : "shortdash",
+          zIndex: isSelected ? 18 : 12
         }));
       }
 
@@ -137,7 +156,11 @@ export async function NaverMapView({
       boundsPointCount += 1;
     });
 
-    if (boundsPointCount > 1) {
+    const allowedLatLngBounds = createLatLngBounds(maps, allowedBounds);
+
+    if (allowedLatLngBounds) {
+      map.fitBounds(allowedLatLngBounds);
+    } else if (boundsPointCount > 1) {
       map.fitBounds(bounds);
     } else if (boundsPointCount === 1) {
       map.setCenter(bounds.getCenter());
@@ -148,6 +171,7 @@ export async function NaverMapView({
       boundaryMetadata: cheonanAsanEmdBoundaryGeoJson.metadata,
       destroy() {
         overlays.forEach((overlay) => overlay?.setMap?.(null));
+        cleanupHandlers.forEach((cleanup) => cleanup?.());
       }
     };
   } catch (error) {
@@ -156,6 +180,78 @@ export async function NaverMapView({
   }
 }
 
+function createOutsideMaskPolygons({ maps, map, bounds }) {
+  const outerBounds = padBounds(bounds, 2.5);
+  const maskBoundsList = [
+    { minLat: bounds.maxLat, maxLat: outerBounds.maxLat, minLng: outerBounds.minLng, maxLng: outerBounds.maxLng },
+    { minLat: outerBounds.minLat, maxLat: bounds.minLat, minLng: outerBounds.minLng, maxLng: outerBounds.maxLng },
+    { minLat: bounds.minLat, maxLat: bounds.maxLat, minLng: outerBounds.minLng, maxLng: bounds.minLng },
+    { minLat: bounds.minLat, maxLat: bounds.maxLat, minLng: bounds.maxLng, maxLng: outerBounds.maxLng }
+  ];
+
+  return maskBoundsList
+    .filter((maskBounds) => maskBounds.minLat < maskBounds.maxLat && maskBounds.minLng < maskBounds.maxLng)
+    .map((maskBounds) => new maps.Polygon({
+      map,
+      paths: makeRectanglePath(maps, maskBounds),
+      strokeColor: "#f3f5f4",
+      strokeOpacity: 0,
+      strokeWeight: 0,
+      fillColor: "#f4f5f4",
+      fillOpacity: 0.48,
+      clickable: false,
+      zIndex: 1
+    }));
+}
+
+function makeRectanglePath(maps, bounds) {
+  return [
+    new maps.LatLng(bounds.minLat, bounds.minLng),
+    new maps.LatLng(bounds.minLat, bounds.maxLng),
+    new maps.LatLng(bounds.maxLat, bounds.maxLng),
+    new maps.LatLng(bounds.maxLat, bounds.minLng),
+    new maps.LatLng(bounds.minLat, bounds.minLng)
+  ];
+}
+
+function applyMapBoundsGuard({ maps, map, bounds, cleanupHandlers }) {
+  let isClampingCenter = false;
+  const listener = maps.Event.addListener(map, "idle", () => {
+    if (isClampingCenter) {
+      isClampingCenter = false;
+      return;
+    }
+
+    const center = getMapCenterPoint(map);
+    if (!center || isPointInsideBounds(center, bounds)) return;
+
+    const clampedCenter = clampPointToBounds(center, bounds);
+    if (!clampedCenter) return;
+
+    isClampingCenter = true;
+    map.panTo(new maps.LatLng(clampedCenter.lat, clampedCenter.lng));
+  });
+
+  cleanupHandlers.push(() => maps.Event.removeListener(listener));
+}
+
+function getMapCenterPoint(map) {
+  const center = map.getCenter?.();
+  const lat = typeof center?.lat === "function" ? center.lat() : center?.y;
+  const lng = typeof center?.lng === "function" ? center.lng() : center?.x;
+
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return null;
+  return { lat: Number(lat), lng: Number(lng) };
+}
+
+function createLatLngBounds(maps, bounds) {
+  if (!bounds) return null;
+
+  return new maps.LatLngBounds(
+    new maps.LatLng(bounds.minLat, bounds.minLng),
+    new maps.LatLng(bounds.maxLat, bounds.maxLng)
+  );
+}
 function addBoundaryPolygons({ maps, map, bounds, overlays, feature, variant, isSelected, onClick }) {
   try {
     const rings = normalizeGeoJsonGeometryToRings(feature.geometry);

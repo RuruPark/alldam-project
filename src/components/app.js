@@ -11,14 +11,15 @@ import {
 import { getLifeZoneDataset } from "../data/lifeZoneRepository.js";
 import {
   assignRelativeGrades,
-  calculateLifeZoneScores,
-  getTopAndLowZones
+  calculateLifeZoneScores
 } from "../utils/lifeZoneScoring.js";
 import {
   applyCommuteToLifeZoneScores,
   COMMUTE_MODE_LABELS,
+  getTopAndLowZonesWithCommuteFeasibility,
   normalizeTargetMinutes
 } from "../utils/commuteScoring.js";
+import { getVisibleRiHighlights } from "../utils/riHighlights.js";
 import { NaverMapView } from "./NaverMapView.js";
 
 const DEFAULT_PREFERENCES = {
@@ -396,6 +397,7 @@ function renderResultScreen() {
         </section>
 
         ${selectedWorkplace ? renderCommuteReadout(selectedWorkplace) : ""}
+        ${bundle.commuteFeasibilityNotice ? renderCommuteFeasibilityNotice(bundle.commuteFeasibilityNotice) : ""}
 
         <div class="result-count">추천 ${bundle.recommendedZones.length}개 · 비추천 ${bundle.lowZone ? 1 : 0}개</div>
 
@@ -474,7 +476,7 @@ function renderMarkerTooltip(zone) {
       <span>자동차 약 ${formatMinutes(zone.commute.commuteTimes.car)}분</span>
       <span>대중교통 약 ${formatMinutes(zone.commute.commuteTimes.transit)}분</span>
       <span>도보 약 ${formatMinutes(zone.commute.commuteTimes.walk)}분</span>
-      <span>${zone.commute.statusLabel}</span>
+      <span>${zone.commute.feasibilityLabel ?? zone.commute.statusLabel}</span>
     </span>
   `;
 }
@@ -537,7 +539,7 @@ function renderResultCard(zone, selectedZoneId, workplace) {
 }
 
 function renderRiHighlights(zone) {
-  const highlights = Array.isArray(zone.riHighlights) ? zone.riHighlights.slice(0, 3) : [];
+  const highlights = getVisibleRiHighlights(zone, 3);
   if (highlights.length === 0) return "";
 
   return `
@@ -546,7 +548,7 @@ function renderRiHighlights(zone) {
       <div class="ri-highlight-list">
         ${highlights.map((highlight) => `<span>${highlight.summaryText}</span>`).join("")}
       </div>
-      <p>주소에 리 이름이 포함된 데이터만 보조 집계한 결과입니다.</p>
+      <p>주소에 리 이름이 포함된 읍·면 데이터만 보조 집계한 결과입니다.</p>
     </div>
   `;
 }
@@ -558,9 +560,9 @@ function renderCommuteSummaryCard(zone, workplace) {
     <div class="commute-summary-card">
       <div class="commute-main">
         <strong>${commute.commuteModeLabel} 약 ${formatMinutes(commute.actualMinutes)}분</strong>
-        <span>${commute.statusLabel} · 추정값</span>
+        <span>${commute.feasibilityLabel ?? commute.statusLabel} · 희망 ${commute.targetMinutes}분 · 추정값</span>
       </div>
-      <p>${formatWorkplaceName(workplace)} 직장 기준 예상 통근시간입니다.</p>
+      <p>${formatWorkplaceName(workplace)} 직장 기준 ${commute.commuteModeLabel} 예상 통근시간입니다.</p>
       <div class="commute-time-grid" aria-label="통근수단별 예상 소요시간">
         <span>자동차 약 ${formatMinutes(commute.commuteTimes.car)}분</span>
         <span>대중교통 약 ${formatMinutes(commute.commuteTimes.transit)}분</span>
@@ -595,6 +597,14 @@ function renderCommuteReadout(workplace) {
   `;
 }
 
+function renderCommuteFeasibilityNotice(message) {
+  return `
+    <div class="commute-feasibility-notice" role="status">
+      <strong>통근 조건 안내</strong>
+      <span>${message}</span>
+    </div>
+  `;
+}
 function renderAxisScore(label, value) {
   return `
     <div class="axis-score">
@@ -735,7 +745,7 @@ function bindPreferenceEvents() {
       state.commutePreference
     );
     const gradedZones = assignRelativeGrades(commuteScoredZones);
-    const resultBundle = getTopAndLowZones(gradedZones);
+    const resultBundle = getTopAndLowZonesWithCommuteFeasibility(gradedZones);
 
     state.scoredZones = gradedZones;
     state.resultBundle = resultBundle;
@@ -832,7 +842,7 @@ function getBoundaryDisplayText() {
   if (metadata.isSample === false) {
     return {
       badge: "행정동 경계",
-      liveNote: "국토교통부 센서스경계 행정동경계를 기준으로 표시합니다.",
+      liveNote: "국토교통부 행정동 경계를 기준으로 표시하며, 천안·아산 외 지역은 흐리게 표시됩니다.",
       fallbackNote: "행정동 경계는 실제 지도 모드에서 표시됩니다."
     };
   }

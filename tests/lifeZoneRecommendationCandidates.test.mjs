@@ -1,12 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { getLifeZoneDataset } from "../src/data/lifeZoneRepository.js";
-import { getWorkplaceOptionsByDataMode } from "../src/data/workplaceOptions.js";
+import {
+  getDefaultWorkplaceOptionByDataMode,
+  getWorkplaceOptionsByDataMode
+} from "../src/data/workplaceOptions.js";
 import {
   assignRelativeGrades,
   calculateLifeZoneScores,
   getTopAndLowZones
 } from "../src/utils/lifeZoneScoring.js";
+import {
+  applyCommuteToLifeZoneScores,
+  getTopAndLowZonesWithCommuteFeasibility
+} from "../src/utils/commuteScoring.js";
 
 const defaultPreference = {
   transportImportance: "medium",
@@ -61,4 +68,25 @@ test("mock mode keeps mock candidate count and does not use generated fallback",
   assert.equal(dataset.sourceType, "mock");
   assert.equal(dataset.lifeZones.length, 8);
   assert.equal(getWorkplaceOptionsByDataMode("mock").length, 8);
+});
+
+test("commute feasibility selection keeps all 48 generated candidates before display selection", () => {
+  const dataset = getLifeZoneDataset({ dataMode: "generated" });
+  const workplace = getDefaultWorkplaceOptionByDataMode("generated");
+  const scoredZones = calculateLifeZoneScores(dataset.lifeZones, defaultPreference);
+  const commuteScoredZones = applyCommuteToLifeZoneScores(scoredZones, workplace, {
+    targetMinutes: 40,
+    commuteImportance: "medium",
+    commuteMode: "walk"
+  });
+  const gradedZones = assignRelativeGrades(commuteScoredZones);
+  const result = getTopAndLowZonesWithCommuteFeasibility(gradedZones);
+
+  assert.equal(scoredZones.length, 48);
+  assert.equal(commuteScoredZones.length, 48);
+  assert.equal(gradedZones.length, 48);
+  assert.equal(result.commuteFeasibilitySummary.candidateCount, 48);
+  assert.equal(result.recommendedZones.length, 2);
+  assert.equal(Boolean(result.lowZone), true);
+  assert.equal(result.displayZones.length, 3);
 });

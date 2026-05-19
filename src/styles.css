@@ -522,7 +522,7 @@ p {
 .map-boundary-note {
   top: 86px;
   left: 18px;
-  max-width: min(320px, calc(100% - 36px));
+  max-width: min(360px, calc(100% - 36px));
   margin: 0;
   padding: 9px 11px;
   color: #4f625b;
@@ -897,6 +897,27 @@ p {
   color: var(--muted);
   font-size: 14px;
   font-weight: 900;
+}
+
+.commute-feasibility-notice {
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border: 1px solid #ead99b;
+  border-radius: 8px;
+  background: #fff9df;
+  color: #765200;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.commute-feasibility-notice strong {
+  font-size: 13px;
+}
+
+.commute-feasibility-notice span {
+  color: #6b5b2a;
+  font-weight: 800;
 }
 
 .zone-card-list {

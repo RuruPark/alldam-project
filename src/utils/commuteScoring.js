@@ -1,5 +1,10 @@
 import { calculateHaversineKm } from "./geoDistance.js";
 import { estimateCommuteTimes as estimateFallbackCommuteTimes } from "./commuteEstimator.js";
+import {
+  getCommuteFeasibilityLabel,
+  getCommuteFeasibilityStatus,
+  isCommuteRecommendedCandidate
+} from "./commuteFeasibility.js";
 
 const DEFAULT_TARGET_MINUTES = 40;
 const DEFAULT_IMPORTANCE = "보통";
@@ -170,6 +175,61 @@ export function applyCommuteToLifeZoneScores(scoredZones = [], workplace, commut
   });
 }
 
+export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = []) {
+  if (!Array.isArray(scoredLifeZones) || scoredLifeZones.length === 0) {
+    return {
+      recommendedZones: [],
+      lowZone: null,
+      displayZones: [],
+      commuteFeasibilityNotice: null,
+      commuteFeasibilitySummary: createCommuteFeasibilitySummary([])
+    };
+  }
+
+  const sortedZones = sortByRecommendationScore(scoredLifeZones);
+  const preferredCandidates = sortedZones.filter((zone) => isPreferredCommuteStatus(getZoneFeasibilityStatus(zone)));
+  const farCandidates = sortedZones.filter((zone) => getZoneFeasibilityStatus(zone) === "far");
+  const unrealisticCandidates = sortedZones.filter((zone) => getZoneFeasibilityStatus(zone) === "unrealistic");
+  const selectedCandidates = [];
+
+  addUniqueZones(selectedCandidates, preferredCandidates);
+  addUniqueZones(selectedCandidates, farCandidates, 2);
+
+  let usedScoreFallback = false;
+  if (selectedCandidates.length < 2) {
+    usedScoreFallback = true;
+    addUniqueZones(selectedCandidates, sortByFallbackCommuteDistance(unrealisticCandidates), 2);
+    addUniqueZones(selectedCandidates, sortedZones, 2);
+  }
+
+  const recommendedZones = selectedCandidates.slice(0, Math.min(2, sortedZones.length)).map((zone, index) => ({
+    ...zone,
+    rankType: "recommended",
+    rankLabel: `추천 TOP ${index + 1}`
+  }));
+  const recommendedIds = new Set(recommendedZones.map((zone) => zone.id));
+  const lowCandidate = [...scoredLifeZones]
+    .filter((zone) => !recommendedIds.has(zone.id))
+    .sort(compareLowCandidate)[0] ?? null;
+  const lowZone = lowCandidate
+    ? {
+        ...lowCandidate,
+        rankType: "low",
+        rankLabel: "비추천"
+      }
+    : null;
+  const displayZones = lowZone ? [...recommendedZones, lowZone] : [...recommendedZones];
+
+  return {
+    recommendedZones,
+    lowZone,
+    displayZones,
+    commuteFeasibilityNotice: usedScoreFallback
+      ? "선택한 통근 조건에 맞는 후보가 부족해 인프라 점수가 높은 후보를 함께 표시합니다."
+      : null,
+    commuteFeasibilitySummary: createCommuteFeasibilitySummary(scoredLifeZones, { usedScoreFallback })
+  };
+}
 export function buildCommuteSummary(workplace, lifeZone, commutePreference = {}) {
   const commuteTimes = estimateCommuteTimes(workplace, lifeZone);
   const commuteMode = commutePreference.commuteMode ?? commutePreference.transportMode ?? "unknown";
@@ -184,6 +244,11 @@ export function buildCommuteSummary(workplace, lifeZone, commutePreference = {})
     targetMinutes,
     commuteImportance
   });
+  const feasibilityStatus = getCommuteFeasibilityStatus({
+    actualMinutes,
+    targetMinutes,
+    transportMode: commuteMode
+  });
 
   return {
     workplace,
@@ -194,6 +259,9 @@ export function buildCommuteSummary(workplace, lifeZone, commutePreference = {})
     targetMinutes,
     actualMinutes,
     fitScore,
+    feasibilityStatus,
+    feasibilityLabel: getCommuteFeasibilityLabel(feasibilityStatus),
+    isRecommendedCandidate: isCommuteRecommendedCandidate(feasibilityStatus),
     statusLabel: getCommuteStatusLabel(actualMinutes, targetMinutes),
     isEstimated: true
   };
@@ -226,6 +294,77 @@ export function normalizeTransportMode(transportMode) {
   return TRANSPORT_MODE_ALIASES[transportMode] ?? transportMode ?? "아직 모름";
 }
 
+function createCommuteFeasibilitySummary(scoredLifeZones = [], options = {}) {
+  return {
+    candidateCount: scoredLifeZones.length,
+    recommendedCandidateCount: scoredLifeZones.filter((zone) => isPreferredCommuteStatus(getZoneFeasibilityStatus(zone))).length,
+    farCandidateCount: scoredLifeZones.filter((zone) => getZoneFeasibilityStatus(zone) === "far").length,
+    unrealisticCandidateCount: scoredLifeZones.filter((zone) => getZoneFeasibilityStatus(zone) === "unrealistic").length,
+    usedScoreFallback: Boolean(options.usedScoreFallback)
+  };
+}
+
+function addUniqueZones(target, source, limit = Number.POSITIVE_INFINITY) {
+  for (const zone of source) {
+    if (target.length >= limit) return;
+    if (!target.some((selectedZone) => selectedZone.id === zone.id)) {
+      target.push(zone);
+    }
+  }
+}
+
+function sortByRecommendationScore(scoredLifeZones = []) {
+  return [...scoredLifeZones].sort((a, b) => {
+    const scoreDiff = getRecommendationScore(b) - getRecommendationScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    return (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER);
+  });
+}
+
+function sortByFallbackCommuteDistance(scoredLifeZones = []) {
+  return [...scoredLifeZones].sort((a, b) => {
+    const actualMinutesDiff = getZoneActualMinutes(a) - getZoneActualMinutes(b);
+    if (actualMinutesDiff !== 0) return actualMinutesDiff;
+
+    const scoreDiff = getRecommendationScore(b) - getRecommendationScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+
+    return (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER);
+  });
+}
+
+function getZoneActualMinutes(zone = {}) {
+  const actualMinutes = Number(zone.commute?.actualMinutes);
+  return Number.isFinite(actualMinutes) ? actualMinutes : Number.MAX_SAFE_INTEGER;
+}
+
+function compareLowCandidate(a, b) {
+  const scoreDiff = getRecommendationScore(a) - getRecommendationScore(b);
+  if (scoreDiff !== 0) return scoreDiff;
+
+  return (b.rank ?? 0) - (a.rank ?? 0);
+}
+
+function getRecommendationScore(zone = {}) {
+  const candidates = [
+    zone.finalScoreWithCommute,
+    zone.totalScore,
+    zone.baseScore,
+    zone.score,
+    zone.finalScore
+  ];
+  const score = candidates.find((candidate) => Number.isFinite(Number(candidate)));
+
+  return score === undefined ? 0 : Number(score);
+}
+
+function getZoneFeasibilityStatus(zone = {}) {
+  return zone.commute?.feasibilityStatus ?? "withinTarget";
+}
+
+function isPreferredCommuteStatus(status) {
+  return status === "withinTarget" || status === "acceptable";
+}
 function normalizeCommuteFitInput(input, legacyTargetMinutes, legacyCommuteImportance) {
   if (typeof input === "object" && input !== null) {
     return input;

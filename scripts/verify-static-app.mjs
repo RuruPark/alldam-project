@@ -28,17 +28,23 @@ const requiredFiles = [
   "src/utils/addressParser.js",
   "src/utils/naverMapLoader.js",
   "src/utils/geoJsonPolygon.js",
+  "src/utils/cheonanAsanMapBounds.js",
   "src/utils/pointInPolygon.js",
   "src/utils/geoDistance.js",
   "src/utils/commuteEstimator.js",
   "src/utils/commuteScoring.js",
+  "src/utils/commuteFeasibility.js",
+  "src/utils/riHighlights.js",
   "src/utils/lifeZoneCommuteScoring.js",
   "src/utils/lifeZoneScoring.js",
   "src/types/lifeZone.ts",
   "docs/data-scoring-plan.md",
   "docs/generated-life-zones-summary.md",
   "docs/preprocessed-csv-diagnosis.md",
-  ".env.example"
+  ".env.example",
+  "tests/cheonanAsanMapBounds.test.mjs",
+  "tests/commuteFeasibility.test.mjs",
+  "tests/riHighlights.test.mjs"
 ];
 
 await Promise.all(requiredFiles.map((file) => readFile(new URL(`../${file}`, import.meta.url), "utf8")));
@@ -46,8 +52,10 @@ await Promise.all(requiredFiles.map((file) => readFile(new URL(`../${file}`, imp
 const indexHtml = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const publicConfig = await readFile(new URL("../public-config.js", import.meta.url), "utf8");
 const appJs = await readFile(new URL("../src/components/app.js", import.meta.url), "utf8");
+const naverMapView = await readFile(new URL("../src/components/NaverMapView.js", import.meta.url), "utf8");
 const lifeZoneRepository = await readFile(new URL("../src/data/lifeZoneRepository.js", import.meta.url), "utf8");
 const workplaceOptions = await readFile(new URL("../src/data/workplaceOptions.js", import.meta.url), "utf8");
+const commuteFeasibility = await readFile(new URL("../src/utils/commuteFeasibility.js", import.meta.url), "utf8");
 const publicConfigIndex = indexHtml.indexOf("./public-config.js");
 const mainScriptIndex = indexHtml.indexOf("./src/main.js");
 
@@ -77,6 +85,25 @@ if (!lifeZoneRepository.includes("generatedLifeZones") || !lifeZoneRepository.in
 
 if (!workplaceOptions.includes("generatedLifeZones") || !workplaceOptions.includes("cheonanAsanEmdCenters")) {
   throw new Error("workplaceOptions.js must support generated and mock workplace sources.");
+}
+
+if (!appJs.includes("getTopAndLowZonesWithCommuteFeasibility") || !appJs.includes("commuteFeasibilityNotice")) {
+  throw new Error("app.js must use commute feasibility filtering for top recommendations.");
+}
+
+if (!appJs.includes("getVisibleRiHighlights")) {
+  throw new Error("app.js must use 읍/면-only ri highlight visibility.");
+}
+
+if (!naverMapView.includes("getCheonanAsanMapBounds") || !naverMapView.includes("applyMapBoundsGuard")) {
+  throw new Error("NaverMapView.js must apply Cheonan-Asan map bounds.");
+}
+
+if (!naverMapView.includes("createOutsideMaskPolygons") || !naverMapView.includes("filterCheonanAsanMapResults")) {
+  throw new Error("NaverMapView.js must mask outside Cheonan-Asan and filter map results.");
+}
+if (!commuteFeasibility.includes("getCommuteFeasibilityStatus") || !commuteFeasibility.includes("isCommuteRecommendedCandidate")) {
+  throw new Error("commuteFeasibility.js must expose feasibility status helpers.");
 }
 
 if (!appJs.includes("48개 전체 후보 기준") && !appJs.includes("lifeZoneDataset.lifeZones.length")) {
