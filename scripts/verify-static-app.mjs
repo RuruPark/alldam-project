@@ -24,6 +24,7 @@ const requiredFiles = [
   "src/data/infrastructureCsvConfig.js",
   "src/data/lifeZoneDataMode.js",
   "src/data/mockLifeZones.js",
+  "src/data/workplaceOptions.js",
   "src/utils/addressParser.js",
   "src/utils/naverMapLoader.js",
   "src/utils/geoJsonPolygon.js",
@@ -44,7 +45,9 @@ await Promise.all(requiredFiles.map((file) => readFile(new URL(`../${file}`, imp
 
 const indexHtml = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const publicConfig = await readFile(new URL("../public-config.js", import.meta.url), "utf8");
+const appJs = await readFile(new URL("../src/components/app.js", import.meta.url), "utf8");
 const lifeZoneRepository = await readFile(new URL("../src/data/lifeZoneRepository.js", import.meta.url), "utf8");
+const workplaceOptions = await readFile(new URL("../src/data/workplaceOptions.js", import.meta.url), "utf8");
 const publicConfigIndex = indexHtml.indexOf("./public-config.js");
 const mainScriptIndex = indexHtml.indexOf("./src/main.js");
 
@@ -70,6 +73,14 @@ if (!publicConfig.includes("LIFE_ZONE_DATA_MODE")) {
 
 if (!lifeZoneRepository.includes("generatedLifeZones") || !lifeZoneRepository.includes("mockLifeZones")) {
   throw new Error("lifeZoneRepository.js must keep generatedLifeZones first and mockLifeZones fallback.");
+}
+
+if (!workplaceOptions.includes("generatedLifeZones") || !workplaceOptions.includes("cheonanAsanEmdCenters")) {
+  throw new Error("workplaceOptions.js must support generated and mock workplace sources.");
+}
+
+if (!appJs.includes("48개 전체 후보 기준") && !appJs.includes("lifeZoneDataset.lifeZones.length")) {
+  throw new Error("app.js must show the generated recommendation candidate count.");
 }
 
 if (!Array.isArray(generatedLifeZones) || generatedLifeZones.length !== 48) {

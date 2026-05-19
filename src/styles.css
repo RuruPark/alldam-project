@@ -136,6 +136,14 @@ p {
   background: #fff5d4;
 }
 
+.dataset-detail {
+  display: block;
+  width: fit-content;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .segment-button,
 .map-filter,
 .secondary-button,

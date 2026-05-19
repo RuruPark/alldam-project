@@ -2,11 +2,12 @@ import {
   cheonanAsanEmdBoundaryGeoJson
 } from "../data/cheonanAsanEmdBoundaries.js";
 import {
-  findEmdCenter,
-  getDistrictsByCity,
-  getEmdsBySelection,
-  getWorkplaceCities
-} from "../data/cheonanAsanEmdCenters.js";
+  findWorkplaceCenterByCode,
+  getDefaultWorkplaceOptionByDataMode,
+  getWorkplaceCitiesByDataMode,
+  getWorkplaceDistrictsByCityAndDataMode,
+  getWorkplaceEmdsBySelectionAndDataMode
+} from "../data/workplaceOptions.js";
 import { getLifeZoneDataset } from "../data/lifeZoneRepository.js";
 import {
   assignRelativeGrades,
@@ -26,14 +27,12 @@ const DEFAULT_PREFERENCES = {
   safetyMedicalImportance: "medium"
 };
 
-const DEFAULT_WORKPLACE_SELECTION = {
-  city: "천안시",
-  district: "서북구",
-  emdCode: ""
-};
+const lifeZoneDataset = getLifeZoneDataset();
+const DEFAULT_WORKPLACE = getDefaultWorkplaceOptionByDataMode(lifeZoneDataset.dataMode);
+const DEFAULT_WORKPLACE_SELECTION = createWorkplaceSelection(DEFAULT_WORKPLACE);
 
 const DEFAULT_COMMUTE_PREFERENCE = {
-  workplaceEmdCode: "",
+  workplaceEmdCode: DEFAULT_WORKPLACE?.emdCode ?? "",
   targetMinutes: 40,
   commuteImportance: "medium",
   commuteMode: "unknown"
@@ -108,12 +107,12 @@ const state = {
 };
 
 let appRoot = null;
-const lifeZoneDataset = getLifeZoneDataset();
 
 export function initLifeZoneApp(root) {
   appRoot = root;
 
   if (!appRoot) return;
+  ensureValidWorkplaceSelection();
   render();
 }
 
@@ -141,6 +140,7 @@ function renderPreferenceScreen() {
           <small class="data-source-label ${lifeZoneDataset.sourceType === "mock" ? "is-mock" : "is-generated"}">
             ${lifeZoneDataset.sourceLabel}
           </small>
+          <small class="dataset-detail">${getDatasetDetailText()}</small>
         </div>
 
         <section class="preference-section" aria-labelledby="infra-preference-title">
@@ -205,19 +205,21 @@ function renderPreferenceCard(axis) {
 }
 
 function renderWorkplaceCommuteSection() {
-  const cities = getWorkplaceCities();
+  const dataMode = lifeZoneDataset.dataMode;
+  const cities = getWorkplaceCitiesByDataMode(dataMode);
   const { city, district, emdCode } = state.workplaceSelection;
-  const districts = getDistrictsByCity(city);
+  const districts = getWorkplaceDistrictsByCityAndDataMode(city, dataMode);
   const districtValue = city === "아산시" ? "해당 없음" : district;
-  const emds = getEmdsBySelection(city, districtValue);
-  const selectedWorkplace = findEmdCenter(emdCode);
+  const emds = getWorkplaceEmdsBySelectionAndDataMode(city, districtValue, dataMode);
+  const selectedWorkplace = findWorkplaceCenterByCode(emdCode, dataMode);
+  const modeLabel = lifeZoneDataset.sourceType === "mock" ? "가상 데이터 기준 직장 위치 선택" : "실제 데이터 기준 직장 위치 선택";
 
   return `
     <section class="commute-panel" aria-labelledby="commute-title">
       <div class="section-heading">
         <p class="eyebrow">직장·통근 조건</p>
         <h2 id="commute-title">직장 위치와 통근 기준을 선택해 주세요</h2>
-        <p>상세 주소 대신 읍면동을 선택하면 추천 생활권과 직장 위치의 관계를 함께 보여줍니다.</p>
+        <p>${modeLabel} · 상세 주소 대신 읍면동을 선택하면 추천 생활권과 직장 위치의 관계를 함께 보여줍니다.</p>
       </div>
 
       <div class="form-grid">
@@ -240,7 +242,7 @@ function renderWorkplaceCommuteSection() {
         <label class="field-group" for="workplace-emd">
           <span>읍면동 선택</span>
           <select id="workplace-emd" data-workplace-emd aria-invalid="${!selectedWorkplace && Boolean(state.validationMessage)}">
-            <option value="">읍면동 선택</option>
+            ${emds.length === 0 ? `<option value="">선택 가능한 읍면동 없음</option>` : ""}
             ${emds.map((emd) => `
               <option value="${emd.emdCode}" ${emd.emdCode === emdCode ? "selected" : ""}>${emd.emdName}</option>
             `).join("")}
@@ -374,6 +376,7 @@ function renderResultScreen() {
             <small class="data-source-label ${lifeZoneDataset.sourceType === "mock" ? "is-mock" : "is-generated"}">
               ${lifeZoneDataset.sourceLabel}
             </small>
+            <small class="dataset-detail">${getDatasetDetailText()}</small>
           </div>
           <button class="secondary-button" type="button" data-reset-preferences aria-label="선호도 다시 설정">
             선호도 다시 설정
@@ -660,20 +663,28 @@ function bindPreferenceEvents() {
   appRoot.querySelector("[data-workplace-city]")?.addEventListener("change", (event) => {
     const city = event.target.value;
     const district = getDefaultDistrict(city);
+    const firstEmd = getWorkplaceEmdsBySelectionAndDataMode(city, district, lifeZoneDataset.dataMode)[0] ?? null;
 
-    state.workplaceSelection = { city, district, emdCode: "" };
-    state.commutePreference = { ...state.commutePreference, workplaceEmdCode: "" };
+    state.workplaceSelection = { city, district, emdCode: firstEmd?.emdCode ?? "" };
+    state.commutePreference = { ...state.commutePreference, workplaceEmdCode: firstEmd?.emdCode ?? "" };
     state.validationMessage = "";
     render();
   });
 
   appRoot.querySelector("[data-workplace-district]")?.addEventListener("change", (event) => {
+    const district = event.target.value;
+    const firstEmd = getWorkplaceEmdsBySelectionAndDataMode(
+      state.workplaceSelection.city,
+      district,
+      lifeZoneDataset.dataMode
+    )[0] ?? null;
+
     state.workplaceSelection = {
       ...state.workplaceSelection,
-      district: event.target.value,
-      emdCode: ""
+      district,
+      emdCode: firstEmd?.emdCode ?? ""
     };
-    state.commutePreference = { ...state.commutePreference, workplaceEmdCode: "" };
+    state.commutePreference = { ...state.commutePreference, workplaceEmdCode: firstEmd?.emdCode ?? "" };
     state.validationMessage = "";
     render();
   });
@@ -947,11 +958,42 @@ function bindResultEvents() {
 }
 
 function getSelectedWorkplace() {
-  return findEmdCenter(state.commutePreference.workplaceEmdCode || state.workplaceSelection.emdCode);
+  return findWorkplaceCenterByCode(
+    state.commutePreference.workplaceEmdCode || state.workplaceSelection.emdCode,
+    lifeZoneDataset.dataMode
+  );
 }
 
 function getDefaultDistrict(city) {
-  return getDistrictsByCity(city)[0] ?? "해당 없음";
+  return getWorkplaceDistrictsByCityAndDataMode(city, lifeZoneDataset.dataMode)[0] ?? "해당 없음";
+}
+
+function createWorkplaceSelection(workplace) {
+  return {
+    city: workplace?.city ?? "천안시",
+    district: workplace?.district ?? "서북구",
+    emdCode: workplace?.emdCode ?? ""
+  };
+}
+
+function ensureValidWorkplaceSelection() {
+  const selectedCode = state.commutePreference.workplaceEmdCode || state.workplaceSelection.emdCode;
+  const selectedWorkplace = findWorkplaceCenterByCode(selectedCode, lifeZoneDataset.dataMode);
+  const fallbackWorkplace = selectedWorkplace ?? getDefaultWorkplaceOptionByDataMode(lifeZoneDataset.dataMode);
+
+  state.workplaceSelection = createWorkplaceSelection(fallbackWorkplace);
+  state.commutePreference = {
+    ...state.commutePreference,
+    workplaceEmdCode: fallbackWorkplace?.emdCode ?? ""
+  };
+}
+
+function getDatasetDetailText() {
+  if (lifeZoneDataset.sourceType === "mock") {
+    return `가상 생활권 ${lifeZoneDataset.lifeZones.length}개 기준`;
+  }
+
+  return `천안·아산 행정동 생활권 ${lifeZoneDataset.lifeZones.length}개 전체 후보 기준`;
 }
 
 function getImportanceLabel(importance) {
