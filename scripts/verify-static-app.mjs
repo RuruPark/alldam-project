@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { generatedLifeZones } from "../src/data/generatedLifeZones.js";
 import { getLifeZoneDataset } from "../src/data/lifeZoneRepository.js";
 import { mockLifeZones } from "../src/data/mockLifeZones.js";
@@ -11,6 +12,8 @@ import {
 const requiredFiles = [
   "index.html",
   "public-config.js",
+  "vercel.json",
+  "scripts/build-vercel-static.mjs",
   "scripts/prepare-admin-boundaries.mjs",
   "scripts/prepare-vworld-boundaries.mjs",
   "scripts/analyze-preprocessed-csv.mjs",
@@ -51,6 +54,7 @@ await Promise.all(requiredFiles.map((file) => readFile(new URL(`../${file}`, imp
 
 const indexHtml = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const publicConfig = await readFile(new URL("../public-config.js", import.meta.url), "utf8");
+const vercelConfig = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
 const appJs = await readFile(new URL("../src/components/app.js", import.meta.url), "utf8");
 const naverMapView = await readFile(new URL("../src/components/NaverMapView.js", import.meta.url), "utf8");
 const lifeZoneRepository = await readFile(new URL("../src/data/lifeZoneRepository.js", import.meta.url), "utf8");
@@ -59,6 +63,39 @@ const commuteFeasibility = await readFile(new URL("../src/utils/commuteFeasibili
 const cheonanAsanMapBounds = await readFile(new URL("../src/utils/cheonanAsanMapBounds.js", import.meta.url), "utf8");
 const publicConfigIndex = indexHtml.indexOf("./public-config.js");
 const mainScriptIndex = indexHtml.indexOf("./src/main.js");
+
+async function collectFiles(directoryUrl) {
+  const entries = await readdir(directoryUrl, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    const entryUrl = new URL(entry.name + (entry.isDirectory() ? "/" : ""), directoryUrl);
+
+    if (entry.isDirectory()) {
+      files.push(...await collectFiles(entryUrl));
+    } else if (entry.isFile()) {
+      files.push(entryUrl);
+    }
+  }
+
+  return files;
+}
+
+async function assertFilesDoNotContain(files, searchText, label) {
+  const matches = [];
+
+  for (const file of files) {
+    const content = await readFile(file, "utf8");
+
+    if (content.includes(searchText)) {
+      matches.push(fileURLToPath(file));
+    }
+  }
+
+  if (matches.length > 0) {
+    throw new Error(`${label} must not contain ${searchText}: ${matches.join(", ")}`);
+  }
+}
 
 if (publicConfigIndex === -1) {
   throw new Error("index.html must load public-config.js.");
@@ -72,9 +109,28 @@ if (publicConfigIndex > mainScriptIndex) {
   throw new Error("public-config.js must load before src/main.js.");
 }
 
+if (vercelConfig.outputDirectory !== "dist") {
+  throw new Error("vercel.json must set outputDirectory to dist.");
+}
+
+const vercelBuildCommand = String(vercelConfig.buildCommand ?? "");
+
+if (
+  !vercelBuildCommand.includes("scripts/verify-static-app.mjs") ||
+  !vercelBuildCommand.includes("scripts/build-vercel-static.mjs")
+) {
+  throw new Error("vercel.json buildCommand must run verify-static-app.mjs and build-vercel-static.mjs.");
+}
+
 if (publicConfig.includes("NAVER_MAP_CLIENT_SECRET")) {
   throw new Error("public-config.js must not contain NAVER_MAP_CLIENT_SECRET.");
 }
+
+await assertFilesDoNotContain(
+  await collectFiles(new URL("../src/", import.meta.url)),
+  "NAVER_MAP_CLIENT_SECRET",
+  "src"
+);
 
 if (!publicConfig.includes("LIFE_ZONE_DATA_MODE")) {
   throw new Error("public-config.js must define LIFE_ZONE_DATA_MODE.");
