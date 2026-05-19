@@ -31,6 +31,7 @@ export async function NaverMapView({
   workplace,
   results = [],
   selectedLifeZoneId,
+  focusSelectedLifeZone = false,
   onSelectLifeZone,
   onError
 } = {}) {
@@ -168,6 +169,13 @@ export async function NaverMapView({
       map.setCenter(bounds.getCenter());
     }
 
+    if (focusSelectedLifeZone) {
+      const selectedLifeZone = filteredResults.find((lifeZone) => lifeZone.id === selectedLifeZoneId);
+      if (selectedLifeZone) {
+        focusLifeZoneOnMap({ maps, map, lifeZone: selectedLifeZone, boundaryFeatures });
+      }
+    }
+
     return {
       map,
       boundaryMetadata: cheonanAsanEmdBoundaryGeoJson.metadata,
@@ -180,6 +188,48 @@ export async function NaverMapView({
     onError?.(error);
     throw error;
   }
+}
+
+function focusLifeZoneOnMap({ maps, map, lifeZone, boundaryFeatures }) {
+  const focusTarget = getLifeZoneFocusTarget(lifeZone, boundaryFeatures);
+
+  if (!focusTarget) return false;
+
+  if (focusTarget.type === "boundary") {
+    const boundaryBounds = createFeatureLatLngBounds(maps, focusTarget.feature);
+    if (boundaryBounds) {
+      map.fitBounds(boundaryBounds);
+      return true;
+    }
+  }
+
+  if (focusTarget.type === "center") {
+    map.panTo(new maps.LatLng(focusTarget.center.lat, focusTarget.center.lng));
+    map.setZoom?.(13);
+    return true;
+  }
+
+  return false;
+}
+
+export function getLifeZoneFocusTarget(lifeZone, boundaryFeatures = []) {
+  const boundaryFeature = findBoundaryFeatureForTarget(boundaryFeatures, lifeZone);
+
+  if (boundaryFeature) {
+    return {
+      type: "boundary",
+      feature: boundaryFeature
+    };
+  }
+
+  const center = normalizePoint(lifeZone);
+
+  return center
+    ? {
+      type: "center",
+      center
+    }
+    : null;
 }
 
 function createOutsideMaskPolygons({ maps, map, bounds }) {
@@ -279,6 +329,22 @@ function createLatLngBounds(maps, bounds) {
     new maps.LatLng(bounds.maxLat, bounds.maxLng)
   );
 }
+
+function createFeatureLatLngBounds(maps, feature) {
+  const rings = normalizeGeoJsonGeometryToRings(feature?.geometry);
+  const bounds = new maps.LatLngBounds();
+  let pointCount = 0;
+
+  rings.forEach((ring) => {
+    ring.forEach((point) => {
+      bounds.extend(new maps.LatLng(point.lat, point.lng));
+      pointCount += 1;
+    });
+  });
+
+  return pointCount > 0 ? bounds : null;
+}
+
 function addBoundaryPolygons({ maps, map, bounds, overlays, feature, variant, isSelected, onClick }) {
   try {
     const rings = normalizeGeoJsonGeometryToRings(feature.geometry);

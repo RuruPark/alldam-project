@@ -48,6 +48,7 @@ const requiredFiles = [
   ".env.example",
   "tests/cheonanAsanMapBounds.test.mjs",
   "tests/commuteFeasibility.test.mjs",
+  "tests/mapFocusBehavior.test.mjs",
   "tests/naverDirectionsUrl.test.mjs",
   "tests/riHighlights.test.mjs"
 ];
@@ -151,12 +152,28 @@ if (!appJs.includes("getTopAndLowZonesWithCommuteFeasibility") || !appJs.include
   throw new Error("app.js must use commute feasibility filtering for top recommendations.");
 }
 
-if (!appJs.includes("getVisibleRiHighlights")) {
+if (!appJs.includes("getVisibleRiHighlightSentences")) {
   throw new Error("app.js must use 읍/면-only ri highlight visibility.");
+}
+
+if (!appJs.includes("shouldFocusSelectedZoneOnMap") || !appJs.includes("focusSelectedLifeZone")) {
+  throw new Error("app.js must request map focus when a recommendation card is selected.");
+}
+
+if (appJs.includes("map-toolbar") || appJs.includes("map-search") || appJs.includes("map-filter")) {
+  throw new Error("app.js must not render the old map search field or top map filter buttons.");
 }
 
 if (!naverMapView.includes("getCheonanAsanMapBounds") || !naverMapView.includes("applyMapBoundsGuard")) {
   throw new Error("NaverMapView.js must apply Cheonan-Asan map bounds.");
+}
+
+if (
+  !naverMapView.includes("focusLifeZoneOnMap") ||
+  !naverMapView.includes("getLifeZoneFocusTarget") ||
+  !naverMapView.includes("createFeatureLatLngBounds")
+) {
+  throw new Error("NaverMapView.js must focus the map on a selected life zone.");
 }
 
 if (!naverMapView.includes("createOutsideMaskPolygons") || !naverMapView.includes("filterCheonanAsanMapResults")) {
@@ -181,6 +198,14 @@ if (!appJs.includes("buildNaverDirectionsUrl") || !appJs.includes("네이버 길
 
 if (appJs.includes("getNaverMapSearchUrl") || appJs.includes("map-filters")) {
   throw new Error("app.js must not render the old map search link or top map filter buttons.");
+}
+
+if (appJs.includes("주요 리 인프라")) {
+  throw new Error("app.js must not show the old ri highlight heading.");
+}
+
+if (appJs.includes("지역, 역, 학교") || appJs.includes("지역, 역, 학교 검색")) {
+  throw new Error("app.js must not show the old map search placeholder.");
 }
 
 [

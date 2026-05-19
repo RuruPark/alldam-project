@@ -145,7 +145,6 @@ p {
 }
 
 .segment-button,
-.map-filter,
 .secondary-button,
 .primary-cta {
   border: 1px solid transparent;
@@ -364,58 +363,6 @@ p {
   position: relative;
   min-height: 100vh;
   padding: 18px;
-}
-
-.map-toolbar {
-  position: relative;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: min(720px, calc(100% - 14px));
-}
-
-.map-search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-height: 52px;
-  padding: 0 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 0 12px 28px rgba(31, 45, 52, 0.12);
-}
-
-.map-search input {
-  width: 100%;
-  border: 0;
-  outline: 0;
-  color: var(--ink);
-}
-
-.map-filters {
-  display: flex;
-  gap: 6px;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 0 12px 28px rgba(31, 45, 52, 0.1);
-}
-
-.map-filter {
-  min-height: 40px;
-  padding: 0 12px;
-  color: var(--muted);
-  background: #f8faf9;
-  font-weight: 900;
-}
-
-.map-filter.is-active {
-  color: white;
-  background: var(--navy);
 }
 
 .mock-map {
@@ -1119,11 +1066,6 @@ p {
   background: #fbfdfb;
 }
 
-.ri-highlight-block strong {
-  color: var(--teal-dark);
-  font-size: 13px;
-}
-
 .ri-highlight-list {
   display: flex;
   flex-wrap: wrap;
@@ -1139,22 +1081,13 @@ p {
   font-weight: 900;
 }
 
-.ri-highlight-block p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
 .strength-row {
   font-size: 12px;
 }
 
 .segment-button:hover,
-.map-filter:hover,
 .secondary-button:hover,
 .primary-cta:hover,
-.zone-card:hover,
 .zone-card:hover {
   transform: translateY(-1px);
 }
@@ -1164,13 +1097,11 @@ p {
 }
 
 .segment-button:focus-visible,
-.map-filter:focus-visible,
 .secondary-button:focus-visible,
 .primary-cta:focus-visible,
 .zone-card:focus-visible,
 .map-marker:focus-visible,
-.workplace-marker:focus-visible,
-.map-search input:focus-visible {
+.workplace-marker:focus-visible {
   outline: 3px solid rgba(230, 167, 0, 0.55);
   outline-offset: 3px;
 }
@@ -1191,22 +1122,8 @@ p {
     box-shadow: 0 -10px 26px rgba(31, 45, 52, 0.12);
   }
 
-  .map-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    width: min(620px, 100%);
-  }
-
-  .map-filters {
-    justify-content: stretch;
-  }
-
-  .map-filter {
-    flex: 1;
-  }
-
   .map-boundary-note {
-    top: 136px;
+    top: 18px;
   }
 }
 

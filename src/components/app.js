@@ -19,7 +19,7 @@ import {
   getTopAndLowZonesWithCommuteFeasibility,
   normalizeTargetMinutes
 } from "../utils/commuteScoring.js";
-import { getVisibleRiHighlights } from "../utils/riHighlights.js";
+import { getVisibleRiHighlightSentences } from "../utils/riHighlights.js";
 import { buildNaverDirectionsUrl } from "../utils/naverDirectionsUrl.js";
 import { NaverMapView } from "./NaverMapView.js";
 
@@ -99,7 +99,8 @@ const state = {
   validationMessage: "",
   scoredZones: [],
   resultBundle: null,
-  selectedZoneId: null
+  selectedZoneId: null,
+  shouldFocusSelectedZoneOnMap: false
 };
 
 let appRoot = null;
@@ -119,7 +120,6 @@ function render() {
   if (state.view === "results") {
     bindResultEvents();
     initializeOptionalNaverMap();
-    syncSelectedCardIntoView();
   } else {
     bindPreferenceEvents();
   }
@@ -328,13 +328,6 @@ function renderResultScreen() {
   return `
     <main class="result-screen">
       <section class="map-view" aria-label="생활권 결과 지도">
-        <div class="map-toolbar">
-          <label class="map-search">
-            <span aria-hidden="true">⌕</span>
-            <input type="search" placeholder="지역, 역, 학교 검색" aria-label="지역, 역, 학교 검색" />
-          </label>
-        </div>
-
         <div class="mock-map" role="region" aria-label="천안·아산 생활권 추천 위치 지도">
           <p class="sr-only">선택한 직장 읍면동과 추천 생활권, 비추천 생활권의 위치를 지도형 배경 위에 표시합니다.</p>
           <svg class="rail-overlay" viewBox="0 0 100 100" aria-hidden="true">
@@ -521,16 +514,14 @@ function renderResultCard(zone, selectedZoneId, workplace) {
 }
 
 function renderRiHighlights(zone) {
-  const highlights = getVisibleRiHighlights(zone, 3);
-  if (highlights.length === 0) return "";
+  const sentences = getVisibleRiHighlightSentences(zone, 3);
+  if (sentences.length === 0) return "";
 
   return `
-    <div class="ri-highlight-block" aria-label="주요 리 인프라">
-      <strong>주요 리 인프라</strong>
+    <div class="ri-highlight-block" aria-label="리 구역별 보조 정보">
       <div class="ri-highlight-list">
-        ${highlights.map((highlight) => `<span>${highlight.summaryText}</span>`).join("")}
+        ${sentences.map((sentence) => `<span>${sentence}</span>`).join("")}
       </div>
-      <p>주소에 리 이름이 포함된 읍·면 데이터만 보조 집계한 결과입니다.</p>
     </div>
   `;
 }
@@ -796,6 +787,8 @@ function initializeOptionalNaverMap() {
 
   const selectedWorkplace = getSelectedWorkplace();
   const displayZones = state.resultBundle?.displayZones ?? [];
+  const focusSelectedLifeZone = state.shouldFocusSelectedZoneOnMap;
+  state.shouldFocusSelectedZoneOnMap = false;
   const mapShell = document.createElement("div");
   mapShell.className = "naver-map-shell is-loading";
   mapShell.innerHTML = `
@@ -814,8 +807,10 @@ function initializeOptionalNaverMap() {
     workplace: selectedWorkplace,
     results: displayZones,
     selectedLifeZoneId: state.selectedZoneId,
+    focusSelectedLifeZone,
     onSelectLifeZone: (lifeZoneId) => {
       state.selectedZoneId = lifeZoneId;
+      state.shouldFocusSelectedZoneOnMap = true;
       render();
     },
     onError: (error) => showFallbackMapAfterNaverError(mapShell, fallbackMap, error)
@@ -950,19 +945,14 @@ function bindResultEvents() {
   appRoot.querySelectorAll("[data-zone-id]").forEach((element) => {
     element.addEventListener("click", () => {
       state.selectedZoneId = element.dataset.zoneId;
+      state.shouldFocusSelectedZoneOnMap = true;
       render();
     });
     element.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       state.selectedZoneId = element.dataset.zoneId;
-      render();
-    });
-  });
-
-  appRoot.querySelectorAll("[data-map-filter]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.activeMapFilter = button.dataset.mapFilter;
+      state.shouldFocusSelectedZoneOnMap = true;
       render();
     });
   });
@@ -1025,15 +1015,6 @@ function getHorizontalKeyDirection(event) {
 function focusAfterRender(selector) {
   requestAnimationFrame(() => {
     appRoot?.querySelector(selector)?.focus();
-  });
-}
-
-function syncSelectedCardIntoView() {
-  requestAnimationFrame(() => {
-    appRoot?.querySelector(".zone-card.is-selected")?.scrollIntoView({
-      block: "nearest",
-      behavior: "smooth"
-    });
   });
 }
 
