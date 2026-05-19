@@ -30,6 +30,7 @@ const requiredFiles = [
   "src/data/workplaceOptions.js",
   "src/utils/addressParser.js",
   "src/utils/naverMapLoader.js",
+  "src/utils/naverDirectionsUrl.js",
   "src/utils/geoJsonPolygon.js",
   "src/utils/cheonanAsanMapBounds.js",
   "src/utils/pointInPolygon.js",
@@ -47,6 +48,7 @@ const requiredFiles = [
   ".env.example",
   "tests/cheonanAsanMapBounds.test.mjs",
   "tests/commuteFeasibility.test.mjs",
+  "tests/naverDirectionsUrl.test.mjs",
   "tests/riHighlights.test.mjs"
 ];
 
@@ -61,6 +63,7 @@ const lifeZoneRepository = await readFile(new URL("../src/data/lifeZoneRepositor
 const workplaceOptions = await readFile(new URL("../src/data/workplaceOptions.js", import.meta.url), "utf8");
 const commuteFeasibility = await readFile(new URL("../src/utils/commuteFeasibility.js", import.meta.url), "utf8");
 const cheonanAsanMapBounds = await readFile(new URL("../src/utils/cheonanAsanMapBounds.js", import.meta.url), "utf8");
+const naverDirectionsUrl = await readFile(new URL("../src/utils/naverDirectionsUrl.js", import.meta.url), "utf8");
 const publicConfigIndex = indexHtml.indexOf("./public-config.js");
 const mainScriptIndex = indexHtml.indexOf("./src/main.js");
 
@@ -164,8 +167,36 @@ if (!cheonanAsanMapBounds.includes("doBoundsIntersect") || !cheonanAsanMapBounds
   throw new Error("cheonanAsanMapBounds.js must detect full viewport departure from Cheonan-Asan.");
 }
 
-if (!naverMapView.includes("getNaverMapViewportBounds") || !naverMapView.includes("createBoundarySvgMaskOverlay")) {
-  throw new Error("NaverMapView.js must restore escaped map views and apply the boundary mask overlay.");
+if (!naverMapView.includes("getNaverMapViewportBounds") || naverMapView.includes("createBoundarySvgMaskOverlay")) {
+  throw new Error("NaverMapView.js must restore escaped map views without the fixed SVG boundary mask overlay.");
+}
+
+if (!naverDirectionsUrl.includes("buildNaverDirectionsUrl") || !naverDirectionsUrl.includes("[\"menu\", \"route\"]")) {
+  throw new Error("naverDirectionsUrl.js must build a Naver route URL.");
+}
+
+if (!appJs.includes("buildNaverDirectionsUrl") || !appJs.includes("네이버 길찾기")) {
+  throw new Error("app.js must render Naver directions links from workplace to life zone.");
+}
+
+if (appJs.includes("getNaverMapSearchUrl") || appJs.includes("map-filters")) {
+  throw new Error("app.js must not render the old map search link or top map filter buttons.");
+}
+
+[
+  "실제 전처리 csv의 인프라 분포로 계산했습니다",
+  "실제 전처리 CSV의 인프라 분포로 계산했습니다",
+  "실제 csv 기준",
+  "실제 CSV 기준",
+  "지도는 천안·아산 생활권 중심으로 제한되며, 외 지역은 흐리게 표시됩니다"
+].forEach((removedText) => {
+  if (appJs.includes(removedText)) {
+    throw new Error(`app.js must not show removed UI copy: ${removedText}`);
+  }
+});
+
+if (naverDirectionsUrl.includes("NAVER_MAP_CLIENT_SECRET")) {
+  throw new Error("naverDirectionsUrl.js must not reference NAVER_MAP_CLIENT_SECRET.");
 }
 if (!commuteFeasibility.includes("getCommuteFeasibilityStatus") || !commuteFeasibility.includes("isCommuteRecommendedCandidate")) {
   throw new Error("commuteFeasibility.js must expose feasibility status helpers.");

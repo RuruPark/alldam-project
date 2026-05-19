@@ -20,6 +20,7 @@ import {
   normalizeTargetMinutes
 } from "../utils/commuteScoring.js";
 import { getVisibleRiHighlights } from "../utils/riHighlights.js";
+import { buildNaverDirectionsUrl } from "../utils/naverDirectionsUrl.js";
 import { NaverMapView } from "./NaverMapView.js";
 
 const DEFAULT_PREFERENCES = {
@@ -80,12 +81,6 @@ const AXES = [
     description: "약국, 치안시설, 안전 인프라를 얼마나 중요하게 보는지 선택하세요.",
     icon: "🚨"
   }
-];
-
-const MAP_FILTERS = [
-  { id: "transport", label: "교통" },
-  { id: "living", label: "문화·체육" },
-  { id: "safetyMedical", label: "치안·의료" }
 ];
 
 const MAP_BOUNDS = {
@@ -338,18 +333,6 @@ function renderResultScreen() {
             <span aria-hidden="true">⌕</span>
             <input type="search" placeholder="지역, 역, 학교 검색" aria-label="지역, 역, 학교 검색" />
           </label>
-          <div class="map-filters" aria-label="지도 인프라 필터">
-            ${MAP_FILTERS.map((filter) => `
-              <button
-                class="map-filter ${state.activeMapFilter === filter.id ? "is-active" : ""}"
-                type="button"
-                aria-pressed="${state.activeMapFilter === filter.id}"
-                data-map-filter="${filter.id}"
-              >
-                ${filter.label}
-              </button>
-            `).join("")}
-          </div>
         </div>
 
         <div class="mock-map" role="region" aria-label="천안·아산 생활권 추천 위치 지도">
@@ -498,7 +481,6 @@ function renderResultCard(zone, selectedZoneId, workplace) {
       <div class="card-title-row">
         <div>
           <h3>${zone.name}</h3>
-          <p>${getZoneDescription(zone)}</p>
         </div>
         <div class="grade-badge">
           <strong>${zone.grade}</strong>
@@ -568,10 +550,32 @@ function renderCommuteSummaryCard(zone, workplace) {
         <span>대중교통 약 ${formatMinutes(commute.commuteTimes.transit)}분</span>
         <span>도보 약 ${formatMinutes(commute.commuteTimes.walk)}분</span>
       </div>
-      <a class="map-link-button" href="${getNaverMapSearchUrl(zone, workplace)}" target="_blank" rel="noopener noreferrer">
-        지도에서 위치 확인
-      </a>
+      ${renderNaverDirectionsLink(zone, workplace)}
     </div>
+  `;
+}
+
+function renderNaverDirectionsLink(zone, workplace) {
+  const directionsUrl = buildNaverDirectionsUrl({
+    start: {
+      name: formatWorkplaceName(workplace),
+      lat: workplace?.lat,
+      lng: workplace?.lng
+    },
+    goal: {
+      name: formatLifeZoneDestinationName(zone),
+      lat: zone?.centerLat ?? zone?.lat,
+      lng: zone?.centerLng ?? zone?.lng
+    },
+    mode: state.commutePreference.commuteMode
+  });
+
+  if (!directionsUrl) return "";
+
+  return `
+    <a class="map-link-button" href="${directionsUrl}" target="_blank" rel="noopener noreferrer">
+      네이버 길찾기
+    </a>
   `;
 }
 
@@ -800,7 +804,6 @@ function initializeOptionalNaverMap() {
       <strong>Naver Maps</strong>
       <span>${boundaryDisplay.badge}</span>
     </div>
-    <p class="map-boundary-note">${boundaryDisplay.liveNote}</p>
     <p class="map-route-note">지도 연결선은 실제 길찾기 경로가 아니라 위치 비교용 선입니다.</p>
   `;
   fallbackMap.insertAdjacentElement("beforebegin", mapShell);
@@ -842,14 +845,12 @@ function getBoundaryDisplayText() {
   if (metadata.isSample === false) {
     return {
       badge: "행정동 경계",
-      liveNote: "지도는 천안·아산 생활권 중심으로 제한되며, 외 지역은 흐리게 표시됩니다.",
       fallbackNote: "행정동 경계는 실제 지도 모드에서 표시됩니다."
     };
   }
 
   return {
     badge: "시연용 읍면동 경계",
-    liveNote: "지도는 천안·아산 생활권 중심으로 제한되며, 시연용 경계 외 지역은 흐리게 표시됩니다.",
     fallbackNote: "읍면동 경계는 실제 지도 모드에서 표시됩니다. 현재 경계 데이터는 시연용입니다."
   };
 }
@@ -1060,6 +1061,8 @@ function getZoneTags(zone) {
 
 function simplifyUserFacingReason(text) {
   return String(text)
+    .replace(/실제\s*CSV\s*기준\s*/gi, "")
+    .replace(/실제\s*csv\s*기준\s*/g, "")
     .replace(/버스·철도 접근성이 함께 확보됨/g, "대중교통 이용이 편리한 편입니다")
     .replace(/도서관과 약국 접근성이 안정적/g, "일상생활에 필요한 시설을 이용하기 좋습니다")
     .replace(/철도와 버스 접근성이 매우 좋음/g, "대중교통 선택지가 많은 편입니다")
@@ -1121,11 +1124,15 @@ function formatWorkplaceName(workplace) {
   return `${workplace.city}${district} ${workplace.emdName}`;
 }
 
-function formatMinutes(value) {
-  return Number.isFinite(value) ? Math.max(1, Math.round(value)) : "-";
+function formatLifeZoneDestinationName(zone = {}) {
+  if (zone.name) return zone.name;
+
+  const district = zone.district && zone.district !== "해당 없음" ? ` ${zone.district}` : "";
+  const emdName = zone.emdName ?? zone.eupMyeonDong ?? "생활권";
+
+  return `${zone.city ?? ""}${district} ${emdName}`.trim();
 }
 
-function getNaverMapSearchUrl(zone, workplace) {
-  const query = encodeURIComponent(`${formatWorkplaceName(workplace)} ${zone.city} ${zone.eupMyeonDong}`);
-  return `https://map.naver.com/p/search/${query}`;
+function formatMinutes(value) {
+  return Number.isFinite(value) ? Math.max(1, Math.round(value)) : "-";
 }

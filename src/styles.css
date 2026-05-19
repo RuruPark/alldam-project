@@ -445,27 +445,9 @@ p {
 }
 
 .naver-map-canvas {
-  position: relative;
   width: 100%;
   height: 100%;
   min-height: 360px;
-}
-
-.naver-boundary-mask-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.naver-boundary-mask-overlay svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.naver-boundary-mask-path {
-  fill: rgba(238, 241, 239, 0.72);
 }
 
 .naver-map-shell.is-loading::after {
