@@ -20,9 +20,10 @@ export default async function handler(request, response) {
     return;
   }
 
+  const body = parseRequestBody(request.body);
   const result = await createWalkingBatchResponse({
-    start: request.body?.start,
-    goals: request.body?.goals
+    start: body?.start,
+    goals: body?.goals
   });
 
   response.status(result.statusCode).json(result.body);
@@ -92,7 +93,9 @@ export async function createWalkingCommuteResponse({
   const appKey = String(env.TMAP_PEDESTRIAN_APP_KEY ?? "").trim();
   const baseDiagnostics = {
     hasTmapAppKey: appKey.length > 0,
-    hasWalkingBaseUrl: baseUrl.length > 0
+    hasWalkingBaseUrl: baseUrl.length > 0,
+    candidateId: goal?.id ?? goal?.emdCode ?? null,
+    isNotRecommendedCandidate: isNotRecommendedCandidate(goal)
   };
 
   if (!baseUrl || !appKey) {
@@ -144,6 +147,8 @@ export async function createWalkingCommuteResponse({
     const diagnostics = {
       ...baseDiagnostics,
       tmapStatusCode: response.status,
+      hasValidStartCoordinates: true,
+      hasValidGoalCoordinates: true,
       tmapErrorCode: redactSensitiveText(extractTmapErrorCode(parsedBody), [appKey]),
       tmapErrorMessage: redactSensitiveText(extractTmapErrorMessage(parsedBody), [appKey])
     };
@@ -151,6 +156,14 @@ export async function createWalkingCommuteResponse({
     if (!response.ok) {
       return createWalkingFailureResponse({
         errorCode: mapTmapHttpStatusToErrorCode(response.status, parsedBody),
+        diagnostics
+      });
+    }
+
+    const bodyErrorCode = mapTmapBodyErrorToErrorCode(parsedBody);
+    if (bodyErrorCode) {
+      return createWalkingFailureResponse({
+        errorCode: bodyErrorCode,
         diagnostics
       });
     }
@@ -252,7 +265,9 @@ export function parseTmapPedestrianPayload(payload) {
     hasFeatures: Array.isArray(features),
     featureCount: Array.isArray(features) ? features.length : 0,
     hasTotalTime: false,
-    hasTotalDistance: false
+    hasTotalDistance: false,
+    selectedDurationSource: null,
+    totalTimeRawType: null
   };
 
   if (!features || features.length === 0) {
@@ -264,18 +279,24 @@ export function parseTmapPedestrianPayload(payload) {
 
   const summaryFeature = features.find((feature) => Number.isFinite(Number(feature?.properties?.totalTime)));
   const properties = summaryFeature?.properties;
-  const totalTimeSeconds = Number(properties?.totalTime);
+  const totalTimeRaw = properties?.totalTime;
+  const totalTimeSeconds = Number(totalTimeRaw);
 
-  if (!properties || !Number.isFinite(totalTimeSeconds)) {
+  if (!properties || !Number.isFinite(totalTimeSeconds) || totalTimeSeconds <= 0) {
     return {
       errorCode: TMAP_WALK_ERROR_CODES.TMAP_WALK_PARSE_FAILED,
       diagnostics
     };
   }
 
-  const distanceMeters = Number(properties.totalDistance);
+  const distanceSourceFeature = Number.isFinite(Number(properties.totalDistance))
+    ? summaryFeature
+    : features.find((feature) => Number.isFinite(Number(feature?.properties?.totalDistance)));
+  const distanceMeters = Number(distanceSourceFeature?.properties?.totalDistance);
   diagnostics.hasTotalTime = true;
   diagnostics.hasTotalDistance = Number.isFinite(distanceMeters);
+  diagnostics.selectedDurationSource = "features.properties.totalTime";
+  diagnostics.totalTimeRawType = typeof totalTimeRaw;
 
   return {
     durationMinutes: Math.ceil(totalTimeSeconds / 60),
@@ -286,6 +307,9 @@ export function parseTmapPedestrianPayload(payload) {
 
 export function mapTmapHttpStatusToErrorCode(status, body = null) {
   const message = String(extractTmapErrorMessage(body) ?? "").toLowerCase();
+  const bodyCode = mapTmapBodyErrorToErrorCode(body);
+
+  if (bodyCode) return bodyCode;
 
   if (status === 401) return TMAP_WALK_ERROR_CODES.TMAP_WALK_AUTH_FAILED;
   if (status === 403) return TMAP_WALK_ERROR_CODES.TMAP_WALK_FORBIDDEN;
@@ -294,6 +318,30 @@ export function mapTmapHttpStatusToErrorCode(status, body = null) {
     return TMAP_WALK_ERROR_CODES.TMAP_WALK_INVALID_COORDINATES;
   }
   if (status === 404 || message.includes("route") || message.includes("경로")) {
+    return TMAP_WALK_ERROR_CODES.TMAP_WALK_NO_ROUTE;
+  }
+
+  return TMAP_WALK_ERROR_CODES.NETWORK_ERROR;
+}
+
+export function mapTmapBodyErrorToErrorCode(body = null) {
+  const code = String(extractTmapErrorCode(body) ?? "").toLowerCase();
+  const message = String(extractTmapErrorMessage(body) ?? "").toLowerCase();
+
+  if (!code && !message) return null;
+  if (code === "401" || message.includes("auth") || message.includes("appkey") || message.includes("api key")) {
+    return TMAP_WALK_ERROR_CODES.TMAP_WALK_AUTH_FAILED;
+  }
+  if (code === "403" || message.includes("forbidden") || message.includes("permission")) {
+    return TMAP_WALK_ERROR_CODES.TMAP_WALK_FORBIDDEN;
+  }
+  if (code === "429" || message.includes("rate") || message.includes("quota") || message.includes("limit")) {
+    return TMAP_WALK_ERROR_CODES.TMAP_WALK_RATE_LIMITED;
+  }
+  if (message.includes("coord") || message.includes("coordinate") || message.includes("좌표")) {
+    return TMAP_WALK_ERROR_CODES.TMAP_WALK_INVALID_COORDINATES;
+  }
+  if (code === "404" || message.includes("route") || message.includes("path") || message.includes("경로")) {
     return TMAP_WALK_ERROR_CODES.TMAP_WALK_NO_ROUTE;
   }
 
@@ -322,12 +370,26 @@ function parseJsonSafely(text) {
   }
 }
 
+function parseRequestBody(body) {
+  if (typeof body === "string") {
+    try {
+      return JSON.parse(body);
+    } catch {
+      return {};
+    }
+  }
+
+  return body && typeof body === "object" ? body : {};
+}
+
 function extractTmapErrorCode(body) {
-  return body?.error?.code ?? body?.errorCode ?? body?.code ?? body?.status ?? null;
+  const error = Array.isArray(body?.error) ? body.error[0] : body?.error;
+  return error?.code ?? body?.errorCode ?? body?.code ?? body?.status ?? null;
 }
 
 function extractTmapErrorMessage(body) {
-  return body?.error?.message ?? body?.errorMessage ?? body?.message ?? body?.msg ?? null;
+  const error = Array.isArray(body?.error) ? body.error[0] : body?.error;
+  return error?.message ?? body?.errorMessage ?? body?.message ?? body?.msg ?? null;
 }
 
 function redactSensitiveText(value, sensitiveValues = []) {
@@ -347,6 +409,8 @@ function sanitizeWalkingDiagnostics(diagnostics = {}) {
   return {
     hasTmapAppKey: Boolean(diagnostics.hasTmapAppKey),
     hasWalkingBaseUrl: Boolean(diagnostics.hasWalkingBaseUrl),
+    candidateId: diagnostics.candidateId ? String(diagnostics.candidateId).slice(0, 80) : undefined,
+    isNotRecommendedCandidate: diagnostics.isNotRecommendedCandidate === true,
     tmapStatusCode: Number.isFinite(Number(diagnostics.tmapStatusCode))
       ? Number(diagnostics.tmapStatusCode)
       : undefined,
@@ -356,6 +420,8 @@ function sanitizeWalkingDiagnostics(diagnostics = {}) {
     featureCount: Number.isFinite(Number(diagnostics.featureCount)) ? Number(diagnostics.featureCount) : undefined,
     hasTotalTime: typeof diagnostics.hasTotalTime === "boolean" ? diagnostics.hasTotalTime : undefined,
     hasTotalDistance: typeof diagnostics.hasTotalDistance === "boolean" ? diagnostics.hasTotalDistance : undefined,
+    selectedDurationSource: diagnostics.selectedDurationSource ? String(diagnostics.selectedDurationSource).slice(0, 80) : undefined,
+    totalTimeRawType: diagnostics.totalTimeRawType ? String(diagnostics.totalTimeRawType).slice(0, 40) : undefined,
     hasValidStartCoordinates: typeof diagnostics.hasValidStartCoordinates === "boolean"
       ? diagnostics.hasValidStartCoordinates
       : undefined,
@@ -364,4 +430,8 @@ function sanitizeWalkingDiagnostics(diagnostics = {}) {
       : undefined,
     networkErrorName: diagnostics.networkErrorName ? String(diagnostics.networkErrorName).slice(0, 80) : undefined
   };
+}
+
+function isNotRecommendedCandidate(goal = null) {
+  return goal?.isNotRecommendedCandidate === true || goal?.apiSelectionRole === "notRecommended";
 }

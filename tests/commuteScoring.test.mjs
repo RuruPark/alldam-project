@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyCommuteToLifeZoneScores,
   buildCommuteSummary,
   calculateCommuteFitScore,
   calculateFinalScoreWithCommute,
+  getTopAndLowZonesWithCommuteFeasibility,
   getCommuteWeightConfig,
   selectActualCommuteMinutes
 } from "../src/utils/commuteScoring.js";
@@ -196,6 +198,29 @@ test("buildCommuteSummary does not apply transit scoring without an ODsay result
   assert.equal(commute.fitScore, null);
 });
 
+test("id-based transit results stay attached to TOP1, TOP2, and low display cards", () => {
+  const workplace = { lat: 36.815, lng: 127.108 };
+  const zones = [
+    createTransitZone("outside-best", 99, 21),
+    createTransitZone("top-1", 91, 31),
+    createTransitZone("top-2", 90, 34),
+    createTransitZone("low-zone", 20, 72)
+  ];
+  const commuteScoredZones = applyCommuteToLifeZoneScores(zones, workplace, {
+    commuteMode: "transit",
+    targetMinutes: 40,
+    commuteImportance: "medium"
+  });
+  const result = getTopAndLowZonesWithCommuteFeasibility(commuteScoredZones, {
+    recommendedCandidateIds: ["top-1", "top-2"],
+    lowZoneId: "low-zone"
+  });
+
+  assert.deepEqual(result.displayZones.map((zone) => zone.id), ["top-1", "top-2", "low-zone"]);
+  assert.deepEqual(result.displayZones.map((zone) => zone.commute.actualMinutes), [31, 34, 72]);
+  assert.equal(result.displayZones.every((zone) => zone.commute.isTransitActualApiValue === true), true);
+});
+
 test("buildCommuteSummary uses TMAP walking success for walk scoring", () => {
   const commute = buildCommuteSummary(
     { lat: 36.815, lng: 127.108 },
@@ -297,3 +322,21 @@ test("applyCommuteScoringToLifeZones adds commute scoring fields and sorts by fi
   assert.equal(typeof result[0].commuteFitScore, "number");
   assert.equal(typeof result[0].finalScoreWithCommute, "number");
 });
+
+function createTransitZone(id, totalScore, durationMinutes) {
+  return {
+    id,
+    centerLat: 36.75 + durationMinutes * 0.0001,
+    centerLng: 127.05 + durationMinutes * 0.0001,
+    totalScore,
+    rank: 1,
+    transitCommute: {
+      id,
+      provider: "odsay-public-transit",
+      apiStatus: "success",
+      isActualApiValue: true,
+      durationMinutes,
+      distanceMeters: 10000
+    }
+  };
+}

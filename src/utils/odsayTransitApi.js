@@ -225,7 +225,8 @@ export async function fetchOdsayTransitCommutes({
     }
 
     const cacheKey = createTransitCacheKey(start, goal, endpoint);
-    const resultPromise = transitRequestCache.get(cacheKey) ??
+    const cachedResultPromise = transitRequestCache.get(cacheKey);
+    const resultPromise = cachedResultPromise ??
       fetchSingleOdsayTransit({
         id: zone.id,
         start,
@@ -241,9 +242,12 @@ export async function fetchOdsayTransitCommutes({
         })
       });
 
-    transitRequestCache.set(cacheKey, resultPromise);
+    if (!cachedResultPromise) transitRequestCache.set(cacheKey, resultPromise);
     const result = await resultPromise;
-    return [zone.id, normalizeResultForZone(result, zone)];
+    return [zone.id, normalizeResultForZone(result, zone, {
+      cacheHit: Boolean(cachedResultPromise),
+      cacheResultIdBeforeClone: result?.id ?? null
+    })];
   });
 
   const settledResults = await runWithConcurrency(tasks, Math.min(Math.max(1, concurrency), 4));
@@ -328,31 +332,30 @@ function normalizeTransitResultForTimes(result) {
     return createFailedOdsayTransitResult();
   }
 
-  return result.isActualApiValue === true
-    ? normalizeOdsayTransitApiResult({
-        id: result.id ?? null,
-        responseJson: {
-          result: {
-            path: [{
-              info: {
-                totalTime: result.durationMinutes,
-                totalDistance: result.distanceMeters,
-                trafficDistance: result.trafficDistanceMeters,
-                totalWalk: result.walkMeters,
-                payment: result.fareKrw,
-                busTransitCount: result.busTransitCount,
-                subwayTransitCount: result.subwayTransitCount,
-                firstStartStation: result.firstStartStation,
-                lastEndStation: result.lastEndStation,
-                mapObj: result.mapObj
-              }
-            }]
-          }
-        },
-        statusCode: result.diagnostics?.odsayStatusCode ?? null,
-        hasOdsayUriApiKey: result.diagnostics?.hasOdsayUriApiKey ?? true
-      })
-    : createFailedOdsayTransitResult({
+  if (result.isActualApiValue === true && Number.isFinite(Number(result.durationMinutes))) {
+    return {
+      id: result.id ?? null,
+      provider: ODSAY_TRANSIT_PROVIDER,
+      apiStatus: "success",
+      errorCode: null,
+      isActualApiValue: true,
+      durationMinutes: Math.max(0, Math.round(Number(result.durationMinutes))),
+      distanceMeters: normalizeNullableMeters(result.distanceMeters),
+      trafficDistanceMeters: normalizeNullableMeters(result.trafficDistanceMeters),
+      walkMeters: normalizeNullableMeters(result.walkMeters),
+      fareKrw: normalizeNullableNumber(result.fareKrw),
+      busTransitCount: normalizeNullableNumber(result.busTransitCount),
+      subwayTransitCount: normalizeNullableNumber(result.subwayTransitCount),
+      firstStartStation: result.firstStartStation ? String(result.firstStartStation) : null,
+      lastEndStation: result.lastEndStation ? String(result.lastEndStation) : null,
+      mapObj: result.mapObj ? String(result.mapObj) : null,
+      option: result.option ?? "recommended",
+      message: null,
+      diagnostics: sanitizeOdsayDiagnostics(result.diagnostics)
+    };
+  }
+
+  return createFailedOdsayTransitResult({
         id: result.id ?? null,
         errorCode: result.errorCode ?? "NETWORK_ERROR",
         message: result.message ?? DEFAULT_FAILURE_MESSAGE,
@@ -407,7 +410,7 @@ function selectBestOdsayPathInfo(responseJson = null) {
   };
 }
 
-function normalizeResultForZone(result, zone) {
+function normalizeResultForZone(result, zone, options = {}) {
   if (!result || typeof result !== "object") {
     return createFailedOdsayTransitResult({
       id: zone.id,
@@ -421,7 +424,10 @@ function normalizeResultForZone(result, zone) {
     id: zone.id,
     diagnostics: sanitizeOdsayDiagnostics({
       ...result.diagnostics,
-      isNotRecommendedCandidate: isNotRecommendedCandidate(zone)
+      isNotRecommendedCandidate: isNotRecommendedCandidate(zone),
+      cacheHit: options.cacheHit === true,
+      cacheResultIdBeforeClone: options.cacheResultIdBeforeClone,
+      cacheResultIdAfterClone: zone.id
     })
   };
 }
@@ -516,6 +522,13 @@ function sanitizeOdsayDiagnostics(diagnostics = null) {
     hasValidGoalCoordinates: typeof diagnostics.hasValidGoalCoordinates === "boolean"
       ? diagnostics.hasValidGoalCoordinates
       : null,
+    cacheHit: diagnostics.cacheHit === true,
+    cacheResultIdBeforeClone: diagnostics.cacheResultIdBeforeClone
+      ? String(diagnostics.cacheResultIdBeforeClone).slice(0, 80)
+      : null,
+    cacheResultIdAfterClone: diagnostics.cacheResultIdAfterClone
+      ? String(diagnostics.cacheResultIdAfterClone).slice(0, 80)
+      : null,
     odsayStatusCode: Number.isFinite(Number(diagnostics.odsayStatusCode))
       ? Number(diagnostics.odsayStatusCode)
       : null,
@@ -536,8 +549,8 @@ function createTransitCacheKey(start, goal, endpoint) {
 
 function normalizeLifeZonePoint(lifeZone) {
   return {
-    lat: lifeZone?.centerLat ?? lifeZone?.lat,
-    lng: lifeZone?.centerLng ?? lifeZone?.lng
+    lat: lifeZone?.centerLat ?? lifeZone?.lat ?? lifeZone?.latitude ?? lifeZone?.coordinate?.lat,
+    lng: lifeZone?.centerLng ?? lifeZone?.lng ?? lifeZone?.longitude ?? lifeZone?.coordinate?.lng
   };
 }
 

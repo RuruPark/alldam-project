@@ -106,6 +106,8 @@ export async function fetchWalkingCommuteBatch({
           id: zone.id,
           lat: Number(zone.centerLat ?? zone.lat ?? zone.latitude ?? zone.coordinate?.lat),
           lng: Number(zone.centerLng ?? zone.lng ?? zone.longitude ?? zone.coordinate?.lng),
+          isNotRecommendedCandidate: zone.isNotRecommendedCandidate === true,
+          apiSelectionRole: zone.apiSelectionRole ?? null,
           name: zone.name ?? zone.emdName ?? zone.label ?? "도착지"
         }))
       })
@@ -151,6 +153,8 @@ function sanitizeWalkingDiagnostics(diagnostics = null) {
   return {
     hasTmapAppKey: Boolean(diagnostics.hasTmapAppKey),
     hasWalkingBaseUrl: Boolean(diagnostics.hasWalkingBaseUrl),
+    candidateId: diagnostics.candidateId ? String(diagnostics.candidateId).slice(0, 80) : null,
+    isNotRecommendedCandidate: diagnostics.isNotRecommendedCandidate === true,
     tmapStatusCode: Number.isFinite(Number(diagnostics.tmapStatusCode))
       ? Number(diagnostics.tmapStatusCode)
       : null,
@@ -160,6 +164,8 @@ function sanitizeWalkingDiagnostics(diagnostics = null) {
     featureCount: Number.isFinite(Number(diagnostics.featureCount)) ? Number(diagnostics.featureCount) : null,
     hasTotalTime: typeof diagnostics.hasTotalTime === "boolean" ? diagnostics.hasTotalTime : null,
     hasTotalDistance: typeof diagnostics.hasTotalDistance === "boolean" ? diagnostics.hasTotalDistance : null,
+    selectedDurationSource: diagnostics.selectedDurationSource ? String(diagnostics.selectedDurationSource).slice(0, 80) : null,
+    totalTimeRawType: diagnostics.totalTimeRawType ? String(diagnostics.totalTimeRawType).slice(0, 40) : null,
     hasValidStartCoordinates: typeof diagnostics.hasValidStartCoordinates === "boolean"
       ? diagnostics.hasValidStartCoordinates
       : null,

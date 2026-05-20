@@ -298,6 +298,161 @@ test("fetchOdsayTransitCommutes keeps not-recommended candidate ids and diagnost
   assert.equal(result.diagnostics.hasValidGoalCoordinates, true);
 });
 
+test("fetchOdsayTransitCommutes accepts alternate goal coordinate field names", async () => {
+  clearOdsayTransitRequestCache();
+  const apiKey = "fixture+secret/key=";
+  let capturedUrl = "";
+
+  const resultByZoneId = await fetchOdsayTransitCommutes({
+    start,
+    apiKey,
+    lifeZones: [{
+      id: "LZ_ALT_COORDS",
+      latitude: goal.lat,
+      longitude: goal.lng
+    }],
+    fetchImpl: async (requestUrl) => {
+      capturedUrl = requestUrl;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          result: {
+            path: [{
+              info: {
+                totalTime: 33,
+                totalDistance: 9100
+              }
+            }]
+          }
+        })
+      };
+    }
+  });
+
+  const parsedUrl = new URL(capturedUrl);
+  const result = resultByZoneId.get("LZ_ALT_COORDS");
+
+  assert.equal(parsedUrl.searchParams.get("EX"), String(goal.lng));
+  assert.equal(parsedUrl.searchParams.get("EY"), String(goal.lat));
+  assert.equal(result.apiStatus, "success");
+  assert.equal(result.durationMinutes, 33);
+});
+
+test("fetchOdsayTransitCommutes clones cached results to the current goal id", async () => {
+  clearOdsayTransitRequestCache();
+  const apiKey = "fixture+secret/key=";
+  let fetchCount = 0;
+
+  const resultByZoneId = await fetchOdsayTransitCommutes({
+    start,
+    apiKey,
+    lifeZones: [
+      {
+        id: "LZ_TOP1",
+        centerLat: goal.lat,
+        centerLng: goal.lng
+      },
+      {
+        id: "LZ_TOP2",
+        centerLat: goal.lat,
+        centerLng: goal.lng
+      }
+    ],
+    fetchImpl: async () => {
+      fetchCount += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          result: {
+            path: [{
+              info: {
+                totalTime: 37,
+                totalDistance: 10000
+              }
+            }]
+          }
+        })
+      };
+    }
+  });
+
+  const top1 = resultByZoneId.get("LZ_TOP1");
+  const top2 = resultByZoneId.get("LZ_TOP2");
+
+  assert.equal(fetchCount, 1);
+  assert.equal(top1.id, "LZ_TOP1");
+  assert.equal(top2.id, "LZ_TOP2");
+  assert.equal(top1.durationMinutes, 37);
+  assert.equal(top2.durationMinutes, 37);
+  assert.equal(top2.diagnostics.cacheHit, true);
+  assert.equal(top2.diagnostics.cacheResultIdBeforeClone, "LZ_TOP1");
+  assert.equal(top2.diagnostics.cacheResultIdAfterClone, "LZ_TOP2");
+});
+
+test("fetchOdsayTransitCommutes keeps successful candidates when the batch is partial", async () => {
+  clearOdsayTransitRequestCache();
+  const apiKey = "fixture+secret/key=";
+  let fetchCount = 0;
+
+  const resultByZoneId = await fetchOdsayTransitCommutes({
+    start,
+    apiKey,
+    lifeZones: [
+      {
+        id: "LZ_TOP1",
+        centerLat: goal.lat,
+        centerLng: goal.lng
+      },
+      {
+        id: "LZ_LOW",
+        centerLat: goal.lat + 0.01,
+        centerLng: goal.lng + 0.01,
+        apiSelectionRole: "notRecommended"
+      }
+    ],
+    fetchImpl: async () => {
+      fetchCount += 1;
+      if (fetchCount === 1) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            result: {
+              path: [{
+                info: {
+                  totalTime: 29,
+                  totalDistance: 8100
+                }
+              }]
+            }
+          })
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          error: [{ code: "-99", message: "no result" }]
+        })
+      };
+    }
+  });
+
+  const top1 = resultByZoneId.get("LZ_TOP1");
+  const low = resultByZoneId.get("LZ_LOW");
+
+  assert.equal(fetchCount, 2);
+  assert.equal(top1.apiStatus, "success");
+  assert.equal(top1.durationMinutes, 29);
+  assert.equal(low.apiStatus, "failed");
+  assert.equal(low.errorCode, "ODSAY_NO_ROUTE");
+  assert.equal(low.durationMinutes, null);
+  assert.equal(low.diagnostics.isNotRecommendedCandidate, true);
+});
+
 test("fetchOdsayTransitCommutes rejects invalid goal coordinates without calling ODsay", async () => {
   clearOdsayTransitRequestCache();
   let fetchCount = 0;

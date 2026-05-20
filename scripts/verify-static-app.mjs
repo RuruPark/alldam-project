@@ -203,6 +203,8 @@ if (
   !odsayTransitApi.includes("ODSAY_TOO_CLOSE") ||
   !odsayTransitApi.includes("ODSAY_INVALID_COORDINATES") ||
   !odsayTransitApi.includes("selectBestOdsayPathInfo") ||
+  !odsayTransitApi.includes("cacheResultIdAfterClone") ||
+  !odsayTransitApi.includes("cacheHit") ||
   !odsayTransitApi.includes("pathCount") ||
   !odsayTransitApi.includes("isNotRecommendedCandidate") ||
   !odsayTransitApi.includes("durationMinutes: null") ||
@@ -219,6 +221,9 @@ if (
   !walkingBatchApiRoute.includes("WGS84GEO") ||
   !walkingBatchApiRoute.includes("MISSING_TMAP_WALK_ENV") ||
   !walkingBatchApiRoute.includes("TMAP_WALK_PARSE_FAILED") ||
+  !walkingBatchApiRoute.includes("mapTmapBodyErrorToErrorCode") ||
+  !walkingBatchApiRoute.includes("selectedDurationSource") ||
+  !walkingBatchApiRoute.includes("candidateId") ||
   !walkingBatchApiRoute.includes("durationMinutes: null") ||
   !walkingBatchApiRoute.includes("isActualApiValue: false")
 ) {

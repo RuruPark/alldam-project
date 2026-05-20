@@ -83,6 +83,7 @@ test("fetchWalkingCommuteBatch posts only walking-batch targets and returns a re
       id: "LZ_1",
       centerLat: 36.773,
       centerLng: 127.059,
+      apiSelectionRole: "notRecommended",
       name: "배방읍"
     }],
     fetchImpl: async (url, options) => {
@@ -109,5 +110,7 @@ test("fetchWalkingCommuteBatch posts only walking-batch targets and returns a re
   assert.equal(body.goals.length, 1);
   assert.equal(body.goals[0].lat, 36.773);
   assert.equal(body.goals[0].lng, 127.059);
+  assert.equal(body.goals[0].isNotRecommendedCandidate, false);
+  assert.equal(body.goals[0].apiSelectionRole, "notRecommended");
   assert.equal(result.get("LZ_1").durationMinutes, 28);
 });

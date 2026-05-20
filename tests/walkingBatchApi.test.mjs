@@ -5,6 +5,7 @@ import {
   createTmapPedestrianRequestBody,
   createWalkingBatchResponse,
   createWalkingCommuteResponse,
+  mapTmapBodyErrorToErrorCode,
   mapTmapHttpStatusToErrorCode,
   parseTmapPedestrianPayload,
   TMAP_WALK_ERROR_CODES
@@ -83,6 +84,11 @@ test("walking-batch calls TMAP pedestrian endpoint with header appKey and lng/la
   assert.equal(result.body.results[0].apiStatus, "success");
   assert.equal(result.body.results[0].durationMinutes, 28);
   assert.equal(result.body.results[0].distanceMeters, 2100);
+  assert.equal(result.body.results[0].diagnostics.candidateId, "LZ_TEST");
+  assert.equal(result.body.results[0].diagnostics.hasValidStartCoordinates, true);
+  assert.equal(result.body.results[0].diagnostics.hasValidGoalCoordinates, true);
+  assert.equal(result.body.results[0].diagnostics.selectedDurationSource, "features.properties.totalTime");
+  assert.equal(result.body.results[0].diagnostics.totalTimeRawType, "number");
   assert.equal(JSON.stringify(result.body).includes(env.TMAP_PEDESTRIAN_APP_KEY), false);
 });
 
@@ -114,6 +120,27 @@ test("TMAP payload parser converts totalTime seconds to minutes", () => {
   assert.equal(parsed.diagnostics.hasTotalDistance, true);
 });
 
+test("TMAP payload parser uses a distance fallback from another feature", () => {
+  const parsed = parseTmapPedestrianPayload({
+    features: [
+      {
+        properties: {
+          totalTime: "120"
+        }
+      },
+      {
+        properties: {
+          totalDistance: "350"
+        }
+      }
+    ]
+  });
+
+  assert.equal(parsed.durationMinutes, 2);
+  assert.equal(parsed.distanceMeters, 350);
+  assert.equal(parsed.diagnostics.hasTotalDistance, true);
+});
+
 test("TMAP payload parser fails safely when features or totalTime are missing", () => {
   assert.equal(
     parseTmapPedestrianPayload({}).errorCode,
@@ -123,6 +150,10 @@ test("TMAP payload parser fails safely when features or totalTime are missing", 
     parseTmapPedestrianPayload({ features: [{ properties: { totalDistance: 100 } }] }).errorCode,
     TMAP_WALK_ERROR_CODES.TMAP_WALK_PARSE_FAILED
   );
+  assert.equal(
+    parseTmapPedestrianPayload({ features: [{ properties: { totalTime: 0, totalDistance: 100 } }] }).errorCode,
+    TMAP_WALK_ERROR_CODES.TMAP_WALK_PARSE_FAILED
+  );
 });
 
 test("walking-batch maps TMAP HTTP status codes", () => {
@@ -130,6 +161,25 @@ test("walking-batch maps TMAP HTTP status codes", () => {
   assert.equal(mapTmapHttpStatusToErrorCode(403), TMAP_WALK_ERROR_CODES.TMAP_WALK_FORBIDDEN);
   assert.equal(mapTmapHttpStatusToErrorCode(429), TMAP_WALK_ERROR_CODES.TMAP_WALK_RATE_LIMITED);
   assert.equal(mapTmapHttpStatusToErrorCode(404), TMAP_WALK_ERROR_CODES.TMAP_WALK_NO_ROUTE);
+});
+
+test("walking-batch maps TMAP body errors even when HTTP status is 200", async () => {
+  const bodyError = {
+    error: {
+      code: "401",
+      message: "invalid appKey"
+    }
+  };
+  const result = await createWalkingCommuteResponse({
+    start,
+    goal,
+    env,
+    fetchImpl: async () => createJsonResponse(200, bodyError)
+  });
+
+  assert.equal(mapTmapBodyErrorToErrorCode(bodyError), TMAP_WALK_ERROR_CODES.TMAP_WALK_AUTH_FAILED);
+  assert.equal(result.body.errorCode, TMAP_WALK_ERROR_CODES.TMAP_WALK_AUTH_FAILED);
+  assert.equal(result.body.durationMinutes, null);
 });
 
 test("walking-batch rejects invalid coordinates without calling TMAP", async () => {
