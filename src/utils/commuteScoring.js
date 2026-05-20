@@ -8,6 +8,7 @@ import {
 
 export const MIN_TARGET_MINUTES = 10;
 export const MAX_TARGET_MINUTES = 90;
+export const WALK_RECOMMENDATION_MAX_MINUTES = 60;
 const DEFAULT_TARGET_MINUTES = 40;
 const DEFAULT_IMPORTANCE = "보통";
 
@@ -201,15 +202,48 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = [], op
   const recommendationPool = recommendedCandidateIds
     ? sortedZones.filter((zone) => recommendedCandidateIds.has(getZoneIdKey(zone)))
     : sortedZones;
+  const isCarMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "car");
+  const isTransitMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "transit");
+  const isWalkMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "walk");
   const actualApiSuccessCandidates = recommendationPool.filter(hasActualSelectedCommuteSuccess);
-  const rerankPool = actualApiSuccessCandidates.length >= 2 ? actualApiSuccessCandidates : recommendationPool;
+  const eligibleWalkCandidates = isWalkMode
+    ? actualApiSuccessCandidates.filter(isEligibleWalkTopRecommendation)
+    : [];
+  const walkNoResultReason = isWalkMode && eligibleWalkCandidates.length === 0
+    ? actualApiSuccessCandidates.length === 0 ? "apiFailed" : "overHardCap"
+    : null;
+
+  if (walkNoResultReason) {
+    return {
+      recommendedZones: [],
+      lowZone: null,
+      displayZones: [],
+      emptyState: createWalkNoResultEmptyState(walkNoResultReason),
+      commuteFeasibilityNotice: createWalkNoResultNotice(walkNoResultReason),
+      commuteFeasibilitySummary: createCommuteFeasibilitySummary(scoredLifeZones, {
+        walkHardCapMinutes: WALK_RECOMMENDATION_MAX_MINUTES,
+        walkEligibleCandidateCount: eligibleWalkCandidates.length,
+        walkActualSuccessCandidateCount: actualApiSuccessCandidates.length,
+        walkNoResultReason
+      }),
+      walkRecommendationSummary: {
+        hardCapMinutes: WALK_RECOMMENDATION_MAX_MINUTES,
+        eligibleCandidateCount: eligibleWalkCandidates.length,
+        actualSuccessCandidateCount: actualApiSuccessCandidates.length,
+        noResultReason: walkNoResultReason
+      }
+    };
+  }
+
+  const rerankPool = isWalkMode
+    ? eligibleWalkCandidates
+    : actualApiSuccessCandidates.length >= 2
+      ? actualApiSuccessCandidates
+      : recommendationPool;
   const preferredRecommendationCandidates = rerankPool.filter((zone) => isPreferredCommuteStatus(getZoneFeasibilityStatus(zone)));
   const farRecommendationCandidates = rerankPool.filter((zone) => getZoneFeasibilityStatus(zone) === "far");
   const unrealisticRecommendationCandidates = rerankPool.filter((zone) => getZoneFeasibilityStatus(zone) === "unrealistic");
   const selectedCandidates = [];
-  const isCarMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "car");
-  const isTransitMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "transit");
-  const isWalkMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "walk");
 
   addUniqueZones(selectedCandidates, preferredRecommendationCandidates);
   addUniqueZones(selectedCandidates, farRecommendationCandidates, 2);
@@ -249,14 +283,27 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = [], op
     lowZone,
     displayZones,
     commuteFeasibilityNotice: createCommuteNotice({ usedScoreFallback, isCarMode, isTransitMode, isWalkMode, hasAppliedCommuteScore }),
-    commuteFeasibilitySummary: createCommuteFeasibilitySummary(scoredLifeZones, { usedScoreFallback })
+    commuteFeasibilitySummary: createCommuteFeasibilitySummary(scoredLifeZones, {
+      usedScoreFallback,
+      walkHardCapMinutes: isWalkMode ? WALK_RECOMMENDATION_MAX_MINUTES : null,
+      walkEligibleCandidateCount: isWalkMode ? eligibleWalkCandidates.length : null,
+      walkActualSuccessCandidateCount: isWalkMode ? actualApiSuccessCandidates.length : null
+    }),
+    walkRecommendationSummary: isWalkMode
+      ? {
+          hardCapMinutes: WALK_RECOMMENDATION_MAX_MINUTES,
+          eligibleCandidateCount: eligibleWalkCandidates.length,
+          actualSuccessCandidateCount: actualApiSuccessCandidates.length,
+          noResultReason: null
+        }
+      : null
   };
 }
 export function buildCommuteSummary(workplace, lifeZone, commutePreference = {}) {
   const commuteTimes = estimateCommuteTimes(workplace, lifeZone);
   const commuteMode = commutePreference.commuteMode ?? commutePreference.transportMode ?? "unknown";
   const commuteImportance = commutePreference.commuteImportance ?? DEFAULT_IMPORTANCE;
-  const targetMinutes = normalizeTargetMinutes(commutePreference.targetMinutes);
+  const targetMinutes = normalizeTargetMinutesForCommuteMode(commutePreference.targetMinutes, commuteMode);
   const modeKey = getCommuteTimeKey(normalizeTransportMode(commuteMode));
   const selectedActualMinutes = selectActualCommuteMinutes({
     commuteTimes,
@@ -348,6 +395,20 @@ export function normalizeTargetMinutes(value) {
   return Math.round(clamp(numericValue, MIN_TARGET_MINUTES, MAX_TARGET_MINUTES));
 }
 
+export function getTargetMinutesRangeForCommuteMode(commuteMode) {
+  const modeKey = getCommuteTimeKey(normalizeTransportMode(commuteMode));
+  return {
+    min: MIN_TARGET_MINUTES,
+    max: modeKey === "walk" ? WALK_RECOMMENDATION_MAX_MINUTES : MAX_TARGET_MINUTES
+  };
+}
+
+export function normalizeTargetMinutesForCommuteMode(value, commuteMode) {
+  const normalizedTargetMinutes = normalizeTargetMinutes(value);
+  const { min, max } = getTargetMinutesRangeForCommuteMode(commuteMode);
+  return Math.round(clamp(normalizedTargetMinutes, min, max));
+}
+
 export function normalizeCommuteImportance(commuteImportance) {
   const normalizedImportance = IMPORTANCE_ALIASES[commuteImportance] ?? commuteImportance;
   return normalizedImportance in COMMUTE_WEIGHT_CONFIGS ? normalizedImportance : DEFAULT_IMPORTANCE;
@@ -363,7 +424,11 @@ function createCommuteFeasibilitySummary(scoredLifeZones = [], options = {}) {
     recommendedCandidateCount: scoredLifeZones.filter((zone) => isPreferredCommuteStatus(getZoneFeasibilityStatus(zone))).length,
     farCandidateCount: scoredLifeZones.filter((zone) => getZoneFeasibilityStatus(zone) === "far").length,
     unrealisticCandidateCount: scoredLifeZones.filter((zone) => getZoneFeasibilityStatus(zone) === "unrealistic").length,
-    usedScoreFallback: Boolean(options.usedScoreFallback)
+    usedScoreFallback: Boolean(options.usedScoreFallback),
+    walkHardCapMinutes: options.walkHardCapMinutes ?? null,
+    walkEligibleCandidateCount: options.walkEligibleCandidateCount ?? null,
+    walkActualSuccessCandidateCount: options.walkActualSuccessCandidateCount ?? null,
+    walkNoResultReason: options.walkNoResultReason ?? null
   };
 }
 
@@ -438,6 +503,15 @@ function hasActualSelectedCommuteSuccess(zone = {}) {
   return commute.isCommuteScoreApplied === true && Number.isFinite(Number(commute.actualMinutes));
 }
 
+function isEligibleWalkTopRecommendation(zone = {}) {
+  const commute = zone.commute ?? {};
+  const actualMinutes = getSafeMinutes(commute.actualMinutes);
+  return commute.commuteMode === "walk" &&
+    commute.isWalkingActualApiValue === true &&
+    actualMinutes !== null &&
+    actualMinutes <= WALK_RECOMMENDATION_MAX_MINUTES;
+}
+
 function getZoneIdKey(zone = {}) {
   return String(zone?.id ?? "");
 }
@@ -462,6 +536,28 @@ function createCommuteNotice({ usedScoreFallback, isCarMode, isTransitMode, isWa
   return usedScoreFallback
     ? "선택한 통근 조건에 맞는 후보가 부족해 인프라 점수가 높은 후보를 함께 표시합니다."
     : null;
+}
+
+function createWalkNoResultNotice(reason) {
+  if (reason === "apiFailed") {
+    return "도보 경로를 확인하지 못했습니다. TMAP 보행자 경로 응답을 확인한 뒤 다시 계산해주세요.";
+  }
+
+  return "도보로 통근하기에 적합한 생활권이 없습니다. 입력한 직장 위치와 희망 통근 조건 기준으로 도보 60분 이내 생활권을 찾지 못했습니다. 자동차 또는 대중교통 조건으로 다시 확인해보세요.";
+}
+
+function createWalkNoResultEmptyState(reason) {
+  if (reason === "apiFailed") {
+    return {
+      title: "도보 경로를 확인하지 못했습니다.",
+      message: "TMAP 보행자 경로 응답을 확인한 뒤 다시 계산해주세요."
+    };
+  }
+
+  return {
+    title: "도보로 통근하기에 적합한 생활권이 없습니다.",
+    message: "입력한 직장 위치와 희망 통근 조건 기준으로 도보 60분 이내 생활권을 찾지 못했습니다. 자동차 또는 대중교통 조건으로 다시 확인해보세요."
+  };
 }
 function normalizeCommuteFitInput(input, legacyTargetMinutes, legacyCommuteImportance) {
   if (typeof input === "object" && input !== null) {

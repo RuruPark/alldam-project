@@ -3,7 +3,7 @@ import {
   calculateCommuteFitScore,
   clamp,
   getCommuteWeightConfig,
-  normalizeTargetMinutes
+  normalizeTargetMinutesForCommuteMode
 } from "./commuteScoring.js";
 import { calculateHaversineKm } from "./geoDistance.js";
 
@@ -93,7 +93,7 @@ export function calculatePreApiScoredLifeZones({
   commutePreference = {}
 } = {}) {
   const commuteMode = normalizeCommuteApiMode(commutePreference.commuteMode ?? commutePreference.transportMode);
-  const targetMinutes = normalizeTargetMinutes(commutePreference.targetMinutes);
+  const targetMinutes = normalizeTargetMinutesForCommuteMode(commutePreference.targetMinutes, commuteMode);
   const commuteImportance = normalizeImportanceKey(commutePreference.commuteImportance);
   const { commuteWeight } = getCommuteWeightConfig(commuteImportance);
 
@@ -170,7 +170,7 @@ export function calculateProxyCommuteScore({
   commuteMode = "car"
 } = {}) {
   const mode = normalizeCommuteApiMode(commuteMode);
-  const safeTargetMinutes = normalizeTargetMinutes(targetMinutes);
+  const safeTargetMinutes = normalizeTargetMinutesForCommuteMode(targetMinutes, mode);
   const minutes = Number(actualMinutes);
 
   if (!Number.isFinite(minutes)) return 0;

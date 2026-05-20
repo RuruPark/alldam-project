@@ -47,9 +47,11 @@ test("walk API failures use displayed candidates when deciding commute failure n
     lowZoneId: "api-low"
   });
 
-  assert.deepEqual(result.recommendedZones.map((zone) => zone.id), ["api-a", "api-b"]);
-  assert.equal(result.lowZone.id, "api-low");
+  assert.deepEqual(result.recommendedZones.map((zone) => zone.id), []);
+  assert.equal(result.lowZone, null);
+  assert.deepEqual(result.displayZones, []);
   assert.match(result.commuteFeasibilityNotice, /도보 경로/);
+  assert.equal(result.walkRecommendationSummary.noResultReason, "apiFailed");
 });
 
 test("walk commute feasibility uses a strong tolerance around the target", () => {

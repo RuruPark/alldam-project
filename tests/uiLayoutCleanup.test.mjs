@@ -38,8 +38,14 @@ test("compact UI classes exist for the result and input panels", () => {
   assert.ok(stylesCss.includes("min-height: 58px"));
 });
 
-test("target commute time remains clamped to ten through ninety minutes", () => {
-  assert.ok(appJs.includes("MIN_TARGET_MINUTES"));
-  assert.ok(appJs.includes("MAX_TARGET_MINUTES"));
+test("target commute time uses dynamic mode-specific range without the old number box", () => {
+  assert.ok(appJs.includes("getTargetMinutesRangeForCommuteMode"));
+  assert.ok(appJs.includes("normalizeTargetMinutesForCommuteMode"));
+  assert.ok(appJs.includes("도보는 최대 60분까지 추천 후보로 봅니다."));
+  assert.ok(appJs.includes("commute-target-control"));
   assert.equal(appJs.includes("data-commute-target-number"), false);
+
+  const commuteModeIndex = appJs.indexOf("주 통근수단");
+  const targetControlIndex = appJs.indexOf("commute-target-control");
+  assert.ok(commuteModeIndex < targetControlIndex);
 });

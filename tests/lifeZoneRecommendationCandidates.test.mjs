@@ -77,7 +77,7 @@ test("commute feasibility selection keeps all 48 generated candidates before dis
   const commuteScoredZones = applyCommuteToLifeZoneScores(scoredZones, workplace, {
     targetMinutes: 40,
     commuteImportance: "medium",
-    commuteMode: "walk"
+    commuteMode: "car"
   });
   const gradedZones = assignRelativeGrades(commuteScoredZones);
   const result = getTopAndLowZonesWithCommuteFeasibility(gradedZones);

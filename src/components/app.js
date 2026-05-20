@@ -12,10 +12,10 @@ import {
 } from "../utils/lifeZoneScoring.js";
 import {
   applyCommuteToLifeZoneScores,
+  getTargetMinutesRangeForCommuteMode,
   getTopAndLowZonesWithCommuteFeasibility,
-  MAX_TARGET_MINUTES,
-  MIN_TARGET_MINUTES,
-  normalizeTargetMinutes
+  normalizeTargetMinutesForCommuteMode,
+  WALK_RECOMMENDATION_MAX_MINUTES
 } from "../utils/commuteScoring.js";
 import { getVisibleRiHighlightSentences } from "../utils/riHighlights.js";
 import { buildNaverDirectionsUrl } from "../utils/naverDirectionsUrl.js";
@@ -244,6 +244,8 @@ function renderWorkplaceCommuteSection() {
   const emds = getWorkplaceEmdsBySelectionAndDataMode(city, districtValue, dataMode);
   const selectedWorkplace = findWorkplaceCenterByCode(emdCode, dataMode);
   const modeLabel = lifeZoneDataset.sourceType === "mock" ? "가상 데이터 기준 직장 위치 선택" : "실제 데이터 기준 직장 위치 선택";
+  const targetRange = getTargetMinutesRangeForCommuteMode(commuteMode);
+  const targetMinutes = normalizeTargetMinutesForCommuteMode(state.commutePreference.targetMinutes, commuteMode);
 
   return `
     <section class="commute-panel" aria-labelledby="commute-title">
@@ -283,25 +285,6 @@ function renderWorkplaceCommuteSection() {
 
       <div class="commute-controls">
         <div class="field-group full-width">
-          <div class="field-label-row">
-            <span>희망 통근시간</span>
-          </div>
-          <div class="range-row">
-            <input
-              type="range"
-              min="${MIN_TARGET_MINUTES}"
-              max="${MAX_TARGET_MINUTES}"
-              step="1"
-              value="${state.commutePreference.targetMinutes}"
-              data-commute-target-range
-              aria-label="희망 통근시간 슬라이더"
-            />
-            <span class="commute-target-value" data-commute-target-display>${state.commutePreference.targetMinutes}분</span>
-          </div>
-          <p class="helper-text">희망하는 통근시간에 가까운 생활권을 함께 고려합니다.</p>
-        </div>
-
-        <div class="field-group full-width">
           <span>통근 중요도</span>
           <div class="importance-segments compact" role="radiogroup" aria-label="통근 중요도 선택">
             ${IMPORTANCE_OPTIONS.map((option) => `
@@ -336,6 +319,25 @@ function renderWorkplaceCommuteSection() {
           </div>
           <p class="helper-text">선택한 통근수단을 기준으로 예상 소요시간을 계산합니다.</p>
         </div>
+
+        <div class="field-group full-width commute-target-control">
+          <div class="field-label-row">
+            <span>희망 통근시간</span>
+          </div>
+          <div class="range-row">
+            <input
+              type="range"
+              min="${targetRange.min}"
+              max="${targetRange.max}"
+              step="1"
+              value="${targetMinutes}"
+              data-commute-target-range
+              aria-label="희망 통근시간 슬라이더"
+            />
+            <span class="commute-target-value" data-commute-target-display>${targetMinutes}분</span>
+          </div>
+          <p class="helper-text">희망하는 통근시간에 가까운 생활권을 함께 고려합니다.${commuteMode === "walk" ? " 도보는 최대 60분까지 추천 후보로 봅니다." : ""}</p>
+        </div>
       </div>
     </section>
   `;
@@ -367,7 +369,7 @@ function renderResultScreen() {
           <div class="map-grid-line vertical"></div>
           ${selectedWorkplace && displayZones.length > 0 ? renderCommuteConnectionLayer(selectedWorkplace, displayZones, selectedZone?.id) : ""}
           ${selectedWorkplace ? renderWorkplaceMarker(selectedWorkplace) : ""}
-          ${displayZones.length === 0 ? renderMapEmptyState() : displayZones.map((zone) => renderMapMarker(zone, selectedZone?.id)).join("")}
+          ${displayZones.length === 0 ? renderMapEmptyState(bundle) : displayZones.map((zone) => renderMapMarker(zone, selectedZone?.id)).join("")}
         </div>
       </section>
 
@@ -381,10 +383,10 @@ function renderResultScreen() {
         </div>
 
         <section class="zone-card-list" role="listbox" aria-label="생활권 결과 목록">
-          ${displayZones.length === 0 ? renderPanelEmptyState(lifeZoneDataset) : displayZones.map((zone) => renderResultCard(zone, selectedZone?.id, selectedWorkplace)).join("")}
+          ${displayZones.length === 0 ? renderPanelEmptyState(lifeZoneDataset, bundle) : displayZones.map((zone) => renderResultCard(zone, selectedZone?.id, selectedWorkplace)).join("")}
         </section>
 
-        ${bundle.commuteFeasibilityNotice ? renderCommuteFeasibilityNotice(bundle.commuteFeasibilityNotice) : ""}
+        ${!bundle.emptyState && bundle.commuteFeasibilityNotice ? renderCommuteFeasibilityNotice(bundle.commuteFeasibilityNotice) : ""}
         ${renderResultActions()}
         ${renderPreferenceReadout()}
         ${selectedWorkplace ? renderCommuteReadout(selectedWorkplace) : ""}
@@ -578,6 +580,13 @@ function getSelectedCommuteSummary(commute) {
     };
   }
 
+  if (isWalkMode && Number(commute.actualMinutes) > WALK_RECOMMENDATION_MAX_MINUTES) {
+    return {
+      title: `도보 약 ${formatMinutes(commute.actualMinutes)}분`,
+      meta: `도보 통근에는 부적합 · 희망 ${commute.targetMinutes}분 · ${getSelectedCommuteSourceLabel(commute)}`
+    };
+  }
+
   return {
     title: `${commute.commuteModeLabel} 약 ${formatMinutes(commute.actualMinutes)}분`,
     meta: `${commute.feasibilityLabel ?? commute.statusLabel} · 희망 ${commute.targetMinutes}분 · ${getSelectedCommuteSourceLabel(commute)}`
@@ -653,7 +662,14 @@ function renderTransitCommuteTimeItem(commute) {
 
 function renderWalkingCommuteTimeItem(commute) {
   if (commute.isWalkingActualApiValue) {
-    return `<span>도보 약 ${formatMinutes(commute.commuteTimes.walk)}분<small>TMAP 보행자 경로 기준</small></span>`;
+    const isWalkHardCapExceeded = Number(commute.commuteTimes.walk) > WALK_RECOMMENDATION_MAX_MINUTES;
+    return `
+      <span>
+        도보 약 ${formatMinutes(commute.commuteTimes.walk)}분
+        <small>TMAP 보행자 경로 기준</small>
+        ${isWalkHardCapExceeded ? `<small>도보 통근에는 부적합</small>` : ""}
+      </span>
+    `;
   }
 
   return `<span class="is-unavailable">도보 경로 불러오기 실패</span>`;
@@ -811,6 +827,11 @@ function renderNaverDirectionsLink(zone, workplace) {
 }
 
 function renderCommuteReadout(workplace) {
+  const targetMinutes = normalizeTargetMinutesForCommuteMode(
+    state.commutePreference.targetMinutes,
+    getEffectiveCommuteMode()
+  );
+
   return `
     <section class="preference-readout commute-readout" aria-label="직장 통근 조건 요약">
       <h2>직장·통근 조건</h2>
@@ -821,7 +842,7 @@ function renderCommuteReadout(workplace) {
         </div>
         <div>
           <span>희망 통근시간</span>
-          <strong>${state.commutePreference.targetMinutes}분</strong>
+          <strong>${targetMinutes}분</strong>
         </div>
         <div>
           <span>주 통근수단</span>
@@ -887,7 +908,18 @@ function renderAxisScore(label, value) {
   `;
 }
 
-function renderMapEmptyState() {
+function renderMapEmptyState(bundle = null) {
+  const emptyState = bundle?.emptyState;
+
+  if (emptyState) {
+    return `
+      <div class="map-empty">
+        <strong>${emptyState.title}</strong>
+        <span>${emptyState.message}</span>
+      </div>
+    `;
+  }
+
   return `
     <div class="map-empty">
       <strong>표시할 생활권 데이터가 없습니다.</strong>
@@ -896,7 +928,16 @@ function renderMapEmptyState() {
   `;
 }
 
-function renderPanelEmptyState(dataset = lifeZoneDataset) {
+function renderPanelEmptyState(dataset = lifeZoneDataset, bundle = null) {
+  if (bundle?.emptyState) {
+    return `
+      <div class="panel-empty">
+        <strong>${bundle.emptyState.title}</strong>
+        <p>${bundle.emptyState.message}</p>
+      </div>
+    `;
+  }
+
   const message = dataset.isDatasetAvailable === false
     ? dataset.errorMessage
     : "생활권 데이터가 3개 미만이면 가능한 결과만 표시합니다.";
@@ -1118,7 +1159,7 @@ function bindTargetMinuteInputs() {
   const rangeInput = appRoot.querySelector("[data-commute-target-range]");
   const displayElement = appRoot.querySelector("[data-commute-target-display]");
   const updateTarget = (value) => {
-    const targetMinutes = normalizeTargetMinutes(value);
+    const targetMinutes = normalizeTargetMinutesForCommuteMode(value, getEffectiveCommuteMode());
 
     state.commutePreference = {
       ...state.commutePreference,
@@ -1228,9 +1269,16 @@ function bindCommuteOptionButtons() {
 
   appRoot.querySelectorAll("[data-commute-mode]").forEach((button) => {
     button.addEventListener("click", () => {
+      const commuteMode = normalizeCommuteApiMode(button.dataset.commuteMode);
+      const targetMinutes = normalizeTargetMinutesForCommuteMode(
+        state.commutePreference.targetMinutes,
+        commuteMode
+      );
+
       state.commutePreference = {
         ...state.commutePreference,
-        commuteMode: button.dataset.commuteMode
+        commuteMode,
+        targetMinutes
       };
       state.validationMessage = "";
       render();
@@ -1317,9 +1365,12 @@ function getEffectiveCommuteMode() {
 }
 
 function getNormalizedCommutePreference() {
+  const commuteMode = getEffectiveCommuteMode();
+
   return {
     ...state.commutePreference,
-    commuteMode: getEffectiveCommuteMode()
+    commuteMode,
+    targetMinutes: normalizeTargetMinutesForCommuteMode(state.commutePreference.targetMinutes, commuteMode)
   };
 }
 

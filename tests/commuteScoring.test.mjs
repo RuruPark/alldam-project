@@ -314,6 +314,112 @@ test("buildCommuteSummary does not use fallback walk minutes after TMAP failure"
   assert.equal(commute.fitScore, null);
 });
 
+test("walk top recommendations exclude TMAP durations above 60 minutes", () => {
+  const workplace = { lat: 36.815, lng: 127.108 };
+  const zones = [
+    createWalkingZone("walk-76", 100, 76),
+    createWalkingZone("walk-187", 99, 187),
+    createWalkingZone("walk-35", 80, 35),
+    createWalkingZone("walk-52", 78, 52),
+    createWalkingZone("walk-291", 5, 291)
+  ];
+  const commuteScoredZones = applyCommuteToLifeZoneScores(zones, workplace, {
+    commuteMode: "walk",
+    targetMinutes: 40,
+    commuteImportance: "medium"
+  });
+  const result = getTopAndLowZonesWithCommuteFeasibility(commuteScoredZones, {
+    recommendedCandidateIds: zones.map((zone) => zone.id),
+    lowZoneId: "walk-291"
+  });
+
+  assert.deepEqual(result.recommendedZones.map((zone) => zone.id), ["walk-35", "walk-52"]);
+  assert.equal(result.recommendedZones.some((zone) => Number(zone.commute.actualMinutes) > 60), false);
+  assert.equal(result.lowZone.id, "walk-291");
+});
+
+test("walk mode shows no top recommendation when all TMAP successes exceed 60 minutes", () => {
+  const workplace = { lat: 36.815, lng: 127.108 };
+  const zones = [
+    createWalkingZone("walk-76", 100, 76),
+    createWalkingZone("walk-187", 99, 187),
+    createWalkingZone("walk-291", 5, 291)
+  ];
+  const commuteScoredZones = applyCommuteToLifeZoneScores(zones, workplace, {
+    commuteMode: "walk",
+    targetMinutes: 40,
+    commuteImportance: "medium"
+  });
+  const result = getTopAndLowZonesWithCommuteFeasibility(commuteScoredZones, {
+    recommendedCandidateIds: zones.map((zone) => zone.id),
+    lowZoneId: "walk-291"
+  });
+
+  assert.deepEqual(result.recommendedZones, []);
+  assert.equal(result.lowZone, null);
+  assert.deepEqual(result.displayZones, []);
+  assert.match(result.emptyState.title, /도보로 통근하기에 적합한 생활권이 없습니다/);
+  assert.equal(result.walkRecommendationSummary.noResultReason, "overHardCap");
+});
+
+test("walk mode shows only one top recommendation when one TMAP success is within 60 minutes", () => {
+  const workplace = { lat: 36.815, lng: 127.108 };
+  const zones = [
+    createWalkingZone("walk-52", 78, 52),
+    createWalkingZone("walk-76", 100, 76),
+    createWalkingZone("walk-187", 99, 187)
+  ];
+  const commuteScoredZones = applyCommuteToLifeZoneScores(zones, workplace, {
+    commuteMode: "walk",
+    targetMinutes: 40,
+    commuteImportance: "medium"
+  });
+  const result = getTopAndLowZonesWithCommuteFeasibility(commuteScoredZones, {
+    recommendedCandidateIds: zones.map((zone) => zone.id),
+    lowZoneId: "walk-187"
+  });
+
+  assert.deepEqual(result.recommendedZones.map((zone) => zone.id), ["walk-52"]);
+  assert.equal(result.recommendedZones[0].commute.actualMinutes, 52);
+  assert.equal(result.lowZone.id, "walk-187");
+});
+
+test("walk mode distinguishes all TMAP API failures from over-60 no-result", () => {
+  const workplace = { lat: 36.815, lng: 127.108 };
+  const zones = [
+    createWalkingZone("walk-failed-a", 90, null, "failed"),
+    createWalkingZone("walk-failed-b", 80, null, "failed"),
+    createWalkingZone("walk-failed-low", 10, null, "failed")
+  ];
+  const commuteScoredZones = applyCommuteToLifeZoneScores(zones, workplace, {
+    commuteMode: "walk",
+    targetMinutes: 40,
+    commuteImportance: "medium"
+  });
+  const result = getTopAndLowZonesWithCommuteFeasibility(commuteScoredZones, {
+    recommendedCandidateIds: zones.map((zone) => zone.id),
+    lowZoneId: "walk-failed-low"
+  });
+
+  assert.deepEqual(result.recommendedZones, []);
+  assert.match(result.emptyState.title, /도보 경로를 확인하지 못했습니다/);
+  assert.equal(result.walkRecommendationSummary.noResultReason, "apiFailed");
+});
+
+test("buildCommuteSummary clamps walk target minutes to 60", () => {
+  const commute = buildCommuteSummary(
+    { lat: 36.815, lng: 127.108 },
+    createWalkingZone("walk-target", 80, 61),
+    {
+      commuteMode: "walk",
+      targetMinutes: 90,
+      commuteImportance: "medium"
+    }
+  );
+
+  assert.equal(commute.targetMinutes, 60);
+});
+
 test("applyCommuteScoringToLifeZones adds commute scoring fields and sorts by final score", () => {
   const workplace = {
     emdCode: "WORK",
@@ -370,6 +476,27 @@ function createTransitZone(id, totalScore, durationMinutes) {
       isActualApiValue: true,
       durationMinutes,
       distanceMeters: 10000
+    }
+  };
+}
+
+function createWalkingZone(id, totalScore, durationMinutes, apiStatus = "success") {
+  const isSuccess = apiStatus === "success" && Number.isFinite(Number(durationMinutes));
+
+  return {
+    id,
+    centerLat: 36.75 + Number(totalScore) * 0.0001,
+    centerLng: 127.05 + Number(totalScore) * 0.0001,
+    totalScore,
+    rank: 1,
+    walkingCommute: {
+      id,
+      provider: "tmap-pedestrian",
+      apiStatus,
+      isActualApiValue: isSuccess,
+      durationMinutes: isSuccess ? durationMinutes : null,
+      distanceMeters: isSuccess ? 1000 : null,
+      errorCode: isSuccess ? null : "TMAP_WALK_NO_ROUTE"
     }
   };
 }

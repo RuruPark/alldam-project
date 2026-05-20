@@ -374,6 +374,10 @@ if (!commutePreselection.includes("walk") || !commutePreselection.includes("low:
   throw new Error("commutePreselection.js must limit walk TMAP calls to shortlist plus not-recommended candidates.");
 }
 
+if (!commutePreselection.includes("normalizeTargetMinutesForCommuteMode")) {
+  throw new Error("commutePreselection.js must clamp walk target minutes before proxy scoring.");
+}
+
 if (
   !drivingApiCore.includes("MISSING_NAVER_ENV") ||
   !drivingApiCore.includes("NAVER_DIRECTIONS_FORBIDDEN") ||
@@ -429,6 +433,22 @@ if (!commuteEstimator.includes("car: null") || commuteEstimator.includes("car: e
 
 if (!commuteScoring.includes("MIN_TARGET_MINUTES = 10") || !commuteScoring.includes("MAX_TARGET_MINUTES = 90")) {
   throw new Error("commuteScoring.js must clamp target commute minutes to 10-90.");
+}
+
+if (
+  !commuteScoring.includes("WALK_RECOMMENDATION_MAX_MINUTES = 60") ||
+  !commuteScoring.includes("isEligibleWalkTopRecommendation") ||
+  !commuteScoring.includes("도보로 통근하기에 적합한 생활권이 없습니다")
+) {
+  throw new Error("commuteScoring.js must keep walk TOP recommendations within the 60-minute TMAP hard cap.");
+}
+
+if (
+  !appJs.includes("getTargetMinutesRangeForCommuteMode") ||
+  !appJs.includes("normalizeTargetMinutesForCommuteMode") ||
+  !appJs.includes("commute-target-control")
+) {
+  throw new Error("app.js must apply mode-specific target commute minute ranges and keep the target control at the bottom of the commute form.");
 }
 
 if (!appJs.includes("data-commute-target-display") || appJs.includes("data-commute-target-number")) {

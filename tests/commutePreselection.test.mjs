@@ -105,6 +105,30 @@ test("walk mode limits TMAP API targets to shortlist plus one not-recommended ca
   assert.equal(preselection.apiSelectionSummary.finalApiTargetCount, preselection.apiTargetZones.length);
 });
 
+test("walk preselection clamps target commute minutes to 60 for proxy scoring", () => {
+  const zones = createFixtureZones(4);
+  const preApiZones = calculatePreApiScoredLifeZones({
+    lifeZones: zones,
+    workplace,
+    commutePreference: {
+      commuteMode: "walk",
+      targetMinutes: 90,
+      commuteImportance: "high"
+    }
+  });
+  const expectedWithWalkCap = calculatePreApiScoredLifeZones({
+    lifeZones: zones,
+    workplace,
+    commutePreference: {
+      commuteMode: "walk",
+      targetMinutes: 60,
+      commuteImportance: "high"
+    }
+  });
+
+  assert.deepEqual(preApiZones.map((zone) => zone.preApiScore), expectedWithWalkCap.map((zone) => zone.preApiScore));
+});
+
 test("not-recommended candidate is selected from the full preApi pool", () => {
   const zones = createFixtureZones(48);
   const preselection = buildCommuteApiPreselection({
