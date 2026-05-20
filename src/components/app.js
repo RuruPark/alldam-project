@@ -12,7 +12,6 @@ import {
 } from "../utils/lifeZoneScoring.js";
 import {
   applyCommuteToLifeZoneScores,
-  COMMUTE_MODE_LABELS,
   getTopAndLowZonesWithCommuteFeasibility,
   MAX_TARGET_MINUTES,
   MIN_TARGET_MINUTES,
@@ -26,6 +25,8 @@ import {
   getConfiguredOdsayUriApiKey
 } from "../utils/odsayTransitApi.js";
 import {
+  DEFAULT_COMMUTE_API_MODE,
+  normalizeCommuteApiMode,
   shouldFetchDrivingCommute,
   shouldFetchOdsayTransit
 } from "../utils/commuteApiPolicy.js";
@@ -45,7 +46,7 @@ const DEFAULT_COMMUTE_PREFERENCE = {
   workplaceEmdCode: DEFAULT_WORKPLACE?.emdCode ?? "",
   targetMinutes: 40,
   commuteImportance: "medium",
-  commuteMode: "unknown"
+  commuteMode: DEFAULT_COMMUTE_API_MODE
 };
 
 const IMPORTANCE_OPTIONS = [
@@ -57,8 +58,7 @@ const IMPORTANCE_OPTIONS = [
 const COMMUTE_MODE_OPTIONS = [
   { value: "car", label: "자동차" },
   { value: "transit", label: "대중교통" },
-  { value: "walk", label: "도보" },
-  { value: "unknown", label: "아직 모름" }
+  { value: "walk", label: "도보" }
 ];
 
 const AXES = [
@@ -188,8 +188,9 @@ function renderCalculationLoadingContent() {
 }
 
 function getCalculationLoadingText() {
-  if (state.commutePreference.commuteMode === "car") return "네이버 길찾기 기준 계산 중...";
-  if (state.commutePreference.commuteMode === "transit") return "ODsay 대중교통 기준 계산 중...";
+  const commuteMode = getEffectiveCommuteMode();
+  if (commuteMode === "car") return "네이버 길찾기 기준 계산 중...";
+  if (commuteMode === "transit") return "ODsay 대중교통 기준 계산 중...";
   return "생활권 계산 중...";
 }
 
@@ -232,6 +233,7 @@ function renderWorkplaceCommuteSection() {
   const dataMode = lifeZoneDataset.dataMode;
   const cities = getWorkplaceCitiesByDataMode(dataMode);
   const { city, district, emdCode } = state.workplaceSelection;
+  const commuteMode = getEffectiveCommuteMode();
   const districts = getWorkplaceDistrictsByCityAndDataMode(city, dataMode);
   const districtValue = city === "아산시" ? "해당 없음" : district;
   const emds = getWorkplaceEmdsBySelectionAndDataMode(city, districtValue, dataMode);
@@ -317,10 +319,10 @@ function renderWorkplaceCommuteSection() {
           <div class="mode-segments" role="radiogroup" aria-label="주 통근수단 선택">
             ${COMMUTE_MODE_OPTIONS.map((option) => `
               <button
-                class="segment-button ${state.commutePreference.commuteMode === option.value ? "is-selected" : ""}"
+                class="segment-button ${commuteMode === option.value ? "is-selected" : ""}"
                 type="button"
                 role="radio"
-                aria-checked="${state.commutePreference.commuteMode === option.value}"
+                aria-checked="${commuteMode === option.value}"
                 data-commute-mode="${option.value}"
               >
                 ${option.label}
@@ -729,7 +731,7 @@ function renderNaverDirectionsLink(zone, workplace) {
       lat: zone?.centerLat ?? zone?.lat,
       lng: zone?.centerLng ?? zone?.lng
     },
-    mode: state.commutePreference.commuteMode
+    mode: getEffectiveCommuteMode()
   });
 
   if (!directionsUrl) return "";
@@ -756,7 +758,7 @@ function renderCommuteReadout(workplace) {
         </div>
         <div>
           <span>주 통근수단</span>
-          <strong>${getCommuteModeLabel(state.commutePreference.commuteMode)}</strong>
+          <strong>${getCommuteModeLabel(getEffectiveCommuteMode())}</strong>
         </div>
       </div>
     </section>
@@ -951,10 +953,11 @@ function bindPreferenceEvents() {
     try {
       const baseScoredZones = calculateLifeZoneScores(lifeZoneDataset.lifeZones, state.preferences);
       const zonesWithCommuteApiResults = await attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selectedWorkplace);
+      const normalizedCommutePreference = getNormalizedCommutePreference();
       const commuteScoredZones = applyCommuteToLifeZoneScores(
         zonesWithCommuteApiResults,
         selectedWorkplace,
-        state.commutePreference
+        normalizedCommutePreference
       );
       const gradedZones = assignRelativeGrades(commuteScoredZones);
       const resultBundle = getTopAndLowZonesWithCommuteFeasibility(gradedZones);
@@ -972,7 +975,9 @@ function bindPreferenceEvents() {
 }
 
 async function attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selectedWorkplace) {
-  if (shouldFetchDrivingCommute(state.commutePreference.commuteMode)) {
+  const commuteMode = getEffectiveCommuteMode();
+
+  if (shouldFetchDrivingCommute(commuteMode)) {
     const drivingCommuteByZoneId = await fetchDrivingCommuteBatch({
       start: selectedWorkplace,
       lifeZones: baseScoredZones
@@ -984,7 +989,7 @@ async function attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selected
     }));
   }
 
-  if (shouldFetchOdsayTransit(state.commutePreference.commuteMode)) {
+  if (shouldFetchOdsayTransit(commuteMode)) {
     const transitCommuteByZoneId = await fetchOdsayTransitCommutes({
       start: selectedWorkplace,
       lifeZones: baseScoredZones,
@@ -1193,8 +1198,20 @@ function getImportanceLabel(importance) {
 }
 
 function getCommuteModeLabel(mode) {
-  const selected = COMMUTE_MODE_OPTIONS.find((option) => option.value === mode);
-  return selected?.label ?? COMMUTE_MODE_LABELS.unknown;
+  const normalizedMode = normalizeCommuteApiMode(mode);
+  const selected = COMMUTE_MODE_OPTIONS.find((option) => option.value === normalizedMode);
+  return selected?.label ?? COMMUTE_MODE_OPTIONS[0].label;
+}
+
+function getEffectiveCommuteMode() {
+  return normalizeCommuteApiMode(state.commutePreference.commuteMode);
+}
+
+function getNormalizedCommutePreference() {
+  return {
+    ...state.commutePreference,
+    commuteMode: getEffectiveCommuteMode()
+  };
 }
 
 function getHorizontalKeyDirection(event) {

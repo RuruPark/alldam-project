@@ -4,8 +4,10 @@ const COMMUTE_API_MODES = {
   walk: "walk"
 };
 
+export const DEFAULT_COMMUTE_API_MODE = COMMUTE_API_MODES.car;
+
 export function normalizeCommuteApiMode(mode) {
-  return Object.values(COMMUTE_API_MODES).includes(mode) ? mode : "unknown";
+  return Object.values(COMMUTE_API_MODES).includes(mode) ? mode : DEFAULT_COMMUTE_API_MODE;
 }
 
 export function shouldFetchDrivingCommute(mode) {

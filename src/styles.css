@@ -213,7 +213,7 @@ p {
 
 .mode-segments {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   padding: 5px;
   border: 1px solid var(--line);
@@ -1143,12 +1143,15 @@ p {
 }
 
 .ri-highlight-list span {
+  max-width: 100%;
   padding: 6px 8px;
   border-radius: 8px;
   background: #eef6f1;
   color: #3f574b;
   font-size: 12px;
   font-weight: 900;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .strength-row {

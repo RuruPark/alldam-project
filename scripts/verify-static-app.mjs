@@ -80,6 +80,7 @@ const workplaceOptions = await readFile(new URL("../src/data/workplaceOptions.js
 const commuteFeasibility = await readFile(new URL("../src/utils/commuteFeasibility.js", import.meta.url), "utf8");
 const commuteEstimator = await readFile(new URL("../src/utils/commuteEstimator.js", import.meta.url), "utf8");
 const commuteScoring = await readFile(new URL("../src/utils/commuteScoring.js", import.meta.url), "utf8");
+const riHighlights = await readFile(new URL("../src/utils/riHighlights.js", import.meta.url), "utf8");
 const drivingCommuteApi = await readFile(new URL("../src/utils/drivingCommuteApi.js", import.meta.url), "utf8");
 const odsayTransitApi = await readFile(new URL("../src/utils/odsayTransitApi.js", import.meta.url), "utf8");
 const commuteApiPolicy = await readFile(new URL("../src/utils/commuteApiPolicy.js", import.meta.url), "utf8");
@@ -190,6 +191,13 @@ if (!commuteApiPolicy.includes("shouldFetchDrivingCommute") || !commuteApiPolicy
   throw new Error("commuteApiPolicy.js must separate selected commute-mode API calls.");
 }
 
+if (
+  !commuteApiPolicy.includes("DEFAULT_COMMUTE_API_MODE") ||
+  !commuteApiPolicy.includes(": DEFAULT_COMMUTE_API_MODE")
+) {
+  throw new Error("commuteApiPolicy.js must normalize legacy commute modes to a valid default mode.");
+}
+
 if (!lifeZoneRepository.includes("generatedLifeZones") || !lifeZoneRepository.includes("mockLifeZones")) {
   throw new Error("lifeZoneRepository.js must keep generatedLifeZones first and mockLifeZones fallback.");
 }
@@ -204,6 +212,14 @@ if (!appJs.includes("getTopAndLowZonesWithCommuteFeasibility") || !appJs.include
 
 if (!appJs.includes("getVisibleRiHighlightSentences")) {
   throw new Error("app.js must use 읍/면-only ri highlight visibility.");
+}
+
+if (appJs.includes("아직 모름") || appJs.includes('data-commute-mode="unknown"') || appJs.includes('{ value: "unknown"')) {
+  throw new Error("app.js must not expose the legacy unknown commute mode option.");
+}
+
+if (!riHighlights.includes("getTopRiHighlightGroups") || !riHighlights.includes("의 ${group.axisLabel}가 우수")) {
+  throw new Error("riHighlights.js must group top ri highlights by axis and use 의 wording.");
 }
 
 if (!appJs.includes("shouldFocusSelectedZoneOnMap") || !appJs.includes("focusSelectedLifeZone")) {

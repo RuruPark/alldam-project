@@ -37,3 +37,10 @@ test("new initial screen title remains present", async () => {
 
   assert.equal(source.includes("천안 아산 맞춤형 생활권 추천 서비스"), true);
 });
+
+test("unknown commute mode is not exposed in user-facing commute options", async () => {
+  const source = await readUserFacingSource();
+
+  assert.equal(source.includes("아직 모름"), false);
+  assert.equal(source.includes('data-commute-mode="unknown"'), false);
+});

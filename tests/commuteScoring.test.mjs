@@ -100,11 +100,15 @@ test("selectActualCommuteMinutes does not replace explicit car mode with other m
   }), null);
 });
 
-test("selectActualCommuteMinutes falls back to the shortest available value for unknown mode", () => {
+test("selectActualCommuteMinutes normalizes legacy unknown mode to car", () => {
   assert.equal(selectActualCommuteMinutes({
     commuteTimes: { transit: 37, walk: 72 },
     transportMode: "unknown"
-  }), 37);
+  }), null);
+  assert.equal(selectActualCommuteMinutes({
+    commuteTimes: { car: 28, transit: 37, walk: 72 },
+    transportMode: "notSure"
+  }), 28);
   assert.equal(selectActualCommuteMinutes({
     commuteTimes: {},
     transportMode: "unknown"

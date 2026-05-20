@@ -13,11 +13,13 @@ const TRANSPORT_MODE_ALIASES = {
   car: "자동차",
   transit: "대중교통",
   walk: "도보",
-  unknown: "아직 모름",
+  unknown: "자동차",
+  notSure: "자동차",
+  unsure: "자동차",
   "자동차": "자동차",
   "대중교통": "대중교통",
   "도보": "도보",
-  "아직 모름": "아직 모름"
+  "아직 모름": "자동차"
 };
 
 const STATUS_LABELS = {
