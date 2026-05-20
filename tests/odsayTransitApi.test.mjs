@@ -339,6 +339,37 @@ test("fetchOdsayTransitCommutes accepts alternate goal coordinate field names", 
   assert.equal(result.durationMinutes, 33);
 });
 
+test("fetchOdsayTransitCommutes stores result map keys as strings", async () => {
+  clearOdsayTransitRequestCache();
+
+  const resultByZoneId = await fetchOdsayTransitCommutes({
+    start,
+    apiKey: "fixture-key",
+    lifeZones: [{
+      id: 101,
+      centerLat: goal.lat,
+      centerLng: goal.lng
+    }],
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        result: {
+          path: [{
+            info: {
+              totalTime: 35,
+              totalDistance: 9800
+            }
+          }]
+        }
+      })
+    })
+  });
+
+  assert.equal(resultByZoneId.has("101"), true);
+  assert.equal(resultByZoneId.get("101").durationMinutes, 35);
+});
+
 test("fetchOdsayTransitCommutes clones cached results to the current goal id", async () => {
   clearOdsayTransitRequestCache();
   const apiKey = "fixture+secret/key=";

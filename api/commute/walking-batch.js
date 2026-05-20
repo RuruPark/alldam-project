@@ -48,11 +48,11 @@ export async function createWalkingBatchResponse({
     };
   }
 
-  const baseUrl = String(env.TMAP_PEDESTRIAN_BASE_URL ?? "").trim();
-  const appKey = String(env.TMAP_PEDESTRIAN_APP_KEY ?? "").trim();
+  const { baseUrl, appKey, appKeyEnvName } = resolveTmapWalkingEnv(env);
   const batchDiagnostics = {
     hasTmapAppKey: appKey.length > 0,
-    hasWalkingBaseUrl: baseUrl.length > 0
+    hasWalkingBaseUrl: baseUrl.length > 0,
+    tmapAppKeyEnvName: appKeyEnvName
   };
 
   const results = [];
@@ -89,11 +89,11 @@ export async function createWalkingCommuteResponse({
   env = process.env,
   fetchImpl = globalThis.fetch
 } = {}) {
-  const baseUrl = String(env.TMAP_PEDESTRIAN_BASE_URL ?? "").trim();
-  const appKey = String(env.TMAP_PEDESTRIAN_APP_KEY ?? "").trim();
+  const { baseUrl, appKey, appKeyEnvName } = resolveTmapWalkingEnv(env);
   const baseDiagnostics = {
     hasTmapAppKey: appKey.length > 0,
     hasWalkingBaseUrl: baseUrl.length > 0,
+    tmapAppKeyEnvName: appKeyEnvName,
     candidateId: goal?.id ?? goal?.emdCode ?? null,
     isNotRecommendedCandidate: isNotRecommendedCandidate(goal)
   };
@@ -362,6 +362,34 @@ export function normalizeRoutePoint(point = {}) {
   };
 }
 
+export function resolveTmapWalkingEnv(env = {}) {
+  const baseUrl = String(env.TMAP_PEDESTRIAN_BASE_URL ?? "").trim();
+  const canonicalAppKey = String(env.TMAP_PEDESTRIAN_APP_KEY ?? "").trim();
+  const aliasAppKey = String(env.TMAP_APP_KEY ?? "").trim();
+
+  if (canonicalAppKey) {
+    return {
+      baseUrl,
+      appKey: canonicalAppKey,
+      appKeyEnvName: "TMAP_PEDESTRIAN_APP_KEY"
+    };
+  }
+
+  if (aliasAppKey) {
+    return {
+      baseUrl,
+      appKey: aliasAppKey,
+      appKeyEnvName: "TMAP_APP_KEY"
+    };
+  }
+
+  return {
+    baseUrl,
+    appKey: "",
+    appKeyEnvName: null
+  };
+}
+
 function parseJsonSafely(text) {
   try {
     return text ? JSON.parse(text) : null;
@@ -409,6 +437,7 @@ function sanitizeWalkingDiagnostics(diagnostics = {}) {
   return {
     hasTmapAppKey: Boolean(diagnostics.hasTmapAppKey),
     hasWalkingBaseUrl: Boolean(diagnostics.hasWalkingBaseUrl),
+    tmapAppKeyEnvName: diagnostics.tmapAppKeyEnvName ? String(diagnostics.tmapAppKeyEnvName).slice(0, 80) : undefined,
     candidateId: diagnostics.candidateId ? String(diagnostics.candidateId).slice(0, 80) : undefined,
     isNotRecommendedCandidate: diagnostics.isNotRecommendedCandidate === true,
     tmapStatusCode: Number.isFinite(Number(diagnostics.tmapStatusCode))

@@ -169,6 +169,10 @@ if (publicConfig.includes("TMAP_PEDESTRIAN_APP_KEY")) {
   throw new Error("public-config.js must not contain TMAP_PEDESTRIAN_APP_KEY.");
 }
 
+if (publicConfig.includes("TMAP_APP_KEY")) {
+  throw new Error("public-config.js must not contain TMAP_APP_KEY.");
+}
+
 await assertFilesDoNotContain(
   await collectFiles(new URL("../src/", import.meta.url)),
   "NAVER_MAP_CLIENT_SECRET",
@@ -178,6 +182,12 @@ await assertFilesDoNotContain(
 await assertFilesDoNotContain(
   await collectFiles(new URL("../src/", import.meta.url)),
   "TMAP_PEDESTRIAN_APP_KEY",
+  "src"
+);
+
+await assertFilesDoNotContain(
+  await collectFiles(new URL("../src/", import.meta.url)),
+  "TMAP_APP_KEY",
   "src"
 );
 
@@ -222,6 +232,9 @@ if (
   !walkingBatchApiRoute.includes("MISSING_TMAP_WALK_ENV") ||
   !walkingBatchApiRoute.includes("TMAP_WALK_PARSE_FAILED") ||
   !walkingBatchApiRoute.includes("mapTmapBodyErrorToErrorCode") ||
+  !walkingBatchApiRoute.includes("resolveTmapWalkingEnv") ||
+  !walkingBatchApiRoute.includes("TMAP_APP_KEY") ||
+  !walkingBatchApiRoute.includes("tmapAppKeyEnvName") ||
   !walkingBatchApiRoute.includes("selectedDurationSource") ||
   !walkingBatchApiRoute.includes("candidateId") ||
   !walkingBatchApiRoute.includes("durationMinutes: null") ||

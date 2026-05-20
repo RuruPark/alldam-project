@@ -8,6 +8,7 @@ import {
   mapTmapBodyErrorToErrorCode,
   mapTmapHttpStatusToErrorCode,
   parseTmapPedestrianPayload,
+  resolveTmapWalkingEnv,
   TMAP_WALK_ERROR_CODES
 } from "../api/commute/walking-batch.js";
 
@@ -46,6 +47,89 @@ test("walking-batch reports missing TMAP environment without exposing appKey", a
   assert.equal(result.body.diagnostics.hasTmapAppKey, false);
   assert.equal(result.body.diagnostics.hasWalkingBaseUrl, false);
   assert.equal(JSON.stringify(result.body).includes("fixture-tmap-app-key"), false);
+});
+
+test("walking-batch reads the canonical TMAP appKey env with trimming and safe diagnostics", async () => {
+  let fetchCalled = false;
+  const result = await createWalkingCommuteResponse({
+    start,
+    goal,
+    env: {
+      TMAP_PEDESTRIAN_BASE_URL: env.TMAP_PEDESTRIAN_BASE_URL,
+      TMAP_PEDESTRIAN_APP_KEY: `  ${env.TMAP_PEDESTRIAN_APP_KEY}  `
+    },
+    fetchImpl: async () => {
+      fetchCalled = true;
+      return createJsonResponse(200, {
+        features: [{
+          properties: {
+            totalTime: 600,
+            totalDistance: 800
+          }
+        }]
+      });
+    }
+  });
+
+  assert.equal(fetchCalled, true);
+  assert.equal(result.body.apiStatus, "success");
+  assert.equal(result.body.diagnostics.hasTmapAppKey, true);
+  assert.equal(result.body.diagnostics.tmapAppKeyEnvName, "TMAP_PEDESTRIAN_APP_KEY");
+  assert.equal(JSON.stringify(result.body).includes(env.TMAP_PEDESTRIAN_APP_KEY), false);
+});
+
+test("walking-batch can diagnose the allowed TMAP appKey alias without exposing the value", async () => {
+  const resolvedEnv = resolveTmapWalkingEnv({
+    TMAP_PEDESTRIAN_BASE_URL: env.TMAP_PEDESTRIAN_BASE_URL,
+    TMAP_PEDESTRIAN_APP_KEY: "   ",
+    TMAP_APP_KEY: "  alias-tmap-key  "
+  });
+
+  assert.equal(resolvedEnv.appKey, "alias-tmap-key");
+  assert.equal(resolvedEnv.appKeyEnvName, "TMAP_APP_KEY");
+
+  const result = await createWalkingCommuteResponse({
+    start,
+    goal,
+    env: {
+      TMAP_PEDESTRIAN_BASE_URL: env.TMAP_PEDESTRIAN_BASE_URL,
+      TMAP_APP_KEY: "alias-tmap-key"
+    },
+    fetchImpl: async () => createJsonResponse(200, {
+      features: [{
+        properties: {
+          totalTime: 900,
+          totalDistance: 1200
+        }
+      }]
+    })
+  });
+
+  assert.equal(result.body.apiStatus, "success");
+  assert.equal(result.body.diagnostics.tmapAppKeyEnvName, "TMAP_APP_KEY");
+  assert.equal(JSON.stringify(result.body).includes("alias-tmap-key"), false);
+});
+
+test("walking-batch treats blank appKey as missing and does not call TMAP upstream", async () => {
+  let fetchCalled = false;
+  const result = await createWalkingCommuteResponse({
+    start,
+    goal,
+    env: {
+      TMAP_PEDESTRIAN_BASE_URL: env.TMAP_PEDESTRIAN_BASE_URL,
+      TMAP_PEDESTRIAN_APP_KEY: "   "
+    },
+    fetchImpl: async () => {
+      fetchCalled = true;
+      return createJsonResponse(200, {});
+    }
+  });
+
+  assert.equal(fetchCalled, false);
+  assert.equal(result.body.errorCode, TMAP_WALK_ERROR_CODES.MISSING_TMAP_WALK_ENV);
+  assert.equal(result.body.diagnostics.hasWalkingBaseUrl, true);
+  assert.equal(result.body.diagnostics.hasTmapAppKey, false);
+  assert.equal(result.body.diagnostics.tmapAppKeyEnvName, undefined);
 });
 
 test("walking-batch calls TMAP pedestrian endpoint with header appKey and lng/lat body", async () => {

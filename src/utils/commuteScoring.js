@@ -199,11 +199,13 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = [], op
   const sortedZones = sortByRecommendationScore(scoredLifeZones);
   const recommendedCandidateIds = createIdSet(options.recommendedCandidateIds);
   const recommendationPool = recommendedCandidateIds
-    ? sortedZones.filter((zone) => recommendedCandidateIds.has(zone.id))
+    ? sortedZones.filter((zone) => recommendedCandidateIds.has(getZoneIdKey(zone)))
     : sortedZones;
-  const preferredRecommendationCandidates = recommendationPool.filter((zone) => isPreferredCommuteStatus(getZoneFeasibilityStatus(zone)));
-  const farRecommendationCandidates = recommendationPool.filter((zone) => getZoneFeasibilityStatus(zone) === "far");
-  const unrealisticRecommendationCandidates = recommendationPool.filter((zone) => getZoneFeasibilityStatus(zone) === "unrealistic");
+  const actualApiSuccessCandidates = recommendationPool.filter(hasActualSelectedCommuteSuccess);
+  const rerankPool = actualApiSuccessCandidates.length >= 2 ? actualApiSuccessCandidates : recommendationPool;
+  const preferredRecommendationCandidates = rerankPool.filter((zone) => isPreferredCommuteStatus(getZoneFeasibilityStatus(zone)));
+  const farRecommendationCandidates = rerankPool.filter((zone) => getZoneFeasibilityStatus(zone) === "far");
+  const unrealisticRecommendationCandidates = rerankPool.filter((zone) => getZoneFeasibilityStatus(zone) === "unrealistic");
   const selectedCandidates = [];
   const isCarMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "car");
   const isTransitMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "transit");
@@ -216,7 +218,7 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = [], op
   if (selectedCandidates.length < 2) {
     usedScoreFallback = true;
     addUniqueZones(selectedCandidates, sortByFallbackCommuteDistance(unrealisticRecommendationCandidates), 2);
-    addUniqueZones(selectedCandidates, recommendationPool, 2);
+    addUniqueZones(selectedCandidates, rerankPool, 2);
   }
 
   const recommendedZones = selectedCandidates.slice(0, Math.min(2, sortedZones.length)).map((zone, index) => ({
@@ -224,12 +226,12 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = [], op
     rankType: "recommended",
     rankLabel: `추천 TOP ${index + 1}`
   }));
-  const recommendedIds = new Set(recommendedZones.map((zone) => zone.id));
+  const recommendedIds = new Set(recommendedZones.map(getZoneIdKey));
   const requestedLowCandidate = options.lowZoneId
-    ? scoredLifeZones.find((zone) => zone.id === options.lowZoneId && !recommendedIds.has(zone.id))
+    ? scoredLifeZones.find((zone) => getZoneIdKey(zone) === String(options.lowZoneId) && !recommendedIds.has(getZoneIdKey(zone)))
     : null;
   const lowCandidate = requestedLowCandidate ?? [...scoredLifeZones]
-    .filter((zone) => !recommendedIds.has(zone.id))
+    .filter((zone) => !recommendedIds.has(getZoneIdKey(zone)))
     .sort(compareLowCandidate)[0] ?? null;
   const lowZone = lowCandidate
     ? {
@@ -368,7 +370,7 @@ function createCommuteFeasibilitySummary(scoredLifeZones = [], options = {}) {
 function addUniqueZones(target, source, limit = Number.POSITIVE_INFINITY) {
   for (const zone of source) {
     if (target.length >= limit) return;
-    if (!target.some((selectedZone) => selectedZone.id === zone.id)) {
+    if (!target.some((selectedZone) => getZoneIdKey(selectedZone) === getZoneIdKey(zone))) {
       target.push(zone);
     }
   }
@@ -376,7 +378,7 @@ function addUniqueZones(target, source, limit = Number.POSITIVE_INFINITY) {
 
 function createIdSet(ids) {
   if (!Array.isArray(ids) || ids.length === 0) return null;
-  return new Set(ids.filter(Boolean));
+  return new Set(ids.filter(Boolean).map(String));
 }
 
 function sortByRecommendationScore(scoredLifeZones = []) {
@@ -426,6 +428,18 @@ function getRecommendationScore(zone = {}) {
 
 function getZoneFeasibilityStatus(zone = {}) {
   return zone.commute?.feasibilityStatus ?? "withinTarget";
+}
+
+function hasActualSelectedCommuteSuccess(zone = {}) {
+  const commute = zone.commute ?? {};
+  if (commute.commuteMode === "car") return commute.isDrivingActualApiValue === true;
+  if (commute.commuteMode === "transit") return commute.isTransitActualApiValue === true;
+  if (commute.commuteMode === "walk") return commute.isWalkingActualApiValue === true;
+  return commute.isCommuteScoreApplied === true && Number.isFinite(Number(commute.actualMinutes));
+}
+
+function getZoneIdKey(zone = {}) {
+  return String(zone?.id ?? "");
 }
 
 function isPreferredCommuteStatus(status) {

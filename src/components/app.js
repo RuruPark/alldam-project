@@ -1070,7 +1070,7 @@ async function attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selected
 
     return baseScoredZones.map((zone) => ({
       ...zone,
-      drivingCommute: drivingCommuteByZoneId.get(zone.id) ?? null
+      drivingCommute: drivingCommuteByZoneId.get(String(zone.id)) ?? drivingCommuteByZoneId.get(zone.id) ?? null
     }));
   }
 
@@ -1083,7 +1083,7 @@ async function attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selected
 
     return baseScoredZones.map((zone) => ({
       ...zone,
-      transitCommute: transitCommuteByZoneId.get(zone.id) ?? null
+      transitCommute: transitCommuteByZoneId.get(String(zone.id)) ?? transitCommuteByZoneId.get(zone.id) ?? null
     }));
   }
 
@@ -1095,7 +1095,7 @@ async function attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selected
 
     return baseScoredZones.map((zone) => ({
       ...zone,
-      walkingCommute: walkingCommuteByZoneId.get(zone.id) ?? null
+      walkingCommute: walkingCommuteByZoneId.get(String(zone.id)) ?? walkingCommuteByZoneId.get(zone.id) ?? null
     }));
   }
 

@@ -165,7 +165,7 @@ export async function fetchOdsayTransitCommutes({
 
   if (!apiKey) {
     lifeZones.forEach((zone) => {
-      resultByZoneId.set(zone.id, createFailedOdsayTransitResult({
+      resultByZoneId.set(getZoneIdKey(zone), createFailedOdsayTransitResult({
         id: zone.id,
         errorCode: "MISSING_ODSAY_URI_KEY",
         diagnostics: { hasOdsayUriApiKey: false }
@@ -177,7 +177,7 @@ export async function fetchOdsayTransitCommutes({
   if (!isValidPoint(start)) {
     lifeZones.forEach((zone) => {
       const goal = normalizeLifeZonePoint(zone);
-      resultByZoneId.set(zone.id, createFailedOdsayTransitResult({
+      resultByZoneId.set(getZoneIdKey(zone), createFailedOdsayTransitResult({
         id: zone.id,
         errorCode: "ODSAY_INVALID_COORDINATES",
         diagnostics: createTransitDiagnostics({
@@ -194,7 +194,7 @@ export async function fetchOdsayTransitCommutes({
   if (typeof fetchImpl !== "function") {
     lifeZones.forEach((zone) => {
       const goal = normalizeLifeZonePoint(zone);
-      resultByZoneId.set(zone.id, createFailedOdsayTransitResult({
+      resultByZoneId.set(getZoneIdKey(zone), createFailedOdsayTransitResult({
         id: zone.id,
         errorCode: "NETWORK_ERROR",
         diagnostics: createTransitDiagnostics({
@@ -212,7 +212,7 @@ export async function fetchOdsayTransitCommutes({
     const goal = normalizeLifeZonePoint(zone);
 
     if (!isValidPoint(goal)) {
-      return [zone.id, createFailedOdsayTransitResult({
+      return [getZoneIdKey(zone), createFailedOdsayTransitResult({
         id: zone.id,
         errorCode: "ODSAY_INVALID_COORDINATES",
         diagnostics: createTransitDiagnostics({
@@ -244,7 +244,7 @@ export async function fetchOdsayTransitCommutes({
 
     if (!cachedResultPromise) transitRequestCache.set(cacheKey, resultPromise);
     const result = await resultPromise;
-    return [zone.id, normalizeResultForZone(result, zone, {
+    return [getZoneIdKey(zone), normalizeResultForZone(result, zone, {
       cacheHit: Boolean(cachedResultPromise),
       cacheResultIdBeforeClone: result?.id ?? null
     })];
@@ -552,6 +552,10 @@ function normalizeLifeZonePoint(lifeZone) {
     lat: lifeZone?.centerLat ?? lifeZone?.lat ?? lifeZone?.latitude ?? lifeZone?.coordinate?.lat,
     lng: lifeZone?.centerLng ?? lifeZone?.lng ?? lifeZone?.longitude ?? lifeZone?.coordinate?.lng
   };
+}
+
+function getZoneIdKey(zone = {}) {
+  return String(zone?.id ?? "");
 }
 
 function isValidPoint(point = {}) {

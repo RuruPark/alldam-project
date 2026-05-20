@@ -153,6 +153,7 @@ function sanitizeWalkingDiagnostics(diagnostics = null) {
   return {
     hasTmapAppKey: Boolean(diagnostics.hasTmapAppKey),
     hasWalkingBaseUrl: Boolean(diagnostics.hasWalkingBaseUrl),
+    tmapAppKeyEnvName: diagnostics.tmapAppKeyEnvName ? String(diagnostics.tmapAppKeyEnvName).slice(0, 80) : null,
     candidateId: diagnostics.candidateId ? String(diagnostics.candidateId).slice(0, 80) : null,
     isNotRecommendedCandidate: diagnostics.isNotRecommendedCandidate === true,
     tmapStatusCode: Number.isFinite(Number(diagnostics.tmapStatusCode))

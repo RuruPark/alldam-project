@@ -221,6 +221,39 @@ test("id-based transit results stay attached to TOP1, TOP2, and low display card
   assert.equal(result.displayZones.every((zone) => zone.commute.isTransitActualApiValue === true), true);
 });
 
+test("transit reranking prefers actual ODsay success candidates over failed high-score candidates", () => {
+  const workplace = { lat: 36.815, lng: 127.108 };
+  const zones = [
+    {
+      id: "failed-high",
+      centerLat: 36.751,
+      centerLng: 127.051,
+      totalScore: 100
+    },
+    createTransitZone("success-a", 80, 42),
+    createTransitZone("success-b", 79, 45),
+    {
+      id: "failed-low",
+      centerLat: 36.762,
+      centerLng: 127.062,
+      totalScore: 10
+    }
+  ];
+  const commuteScoredZones = applyCommuteToLifeZoneScores(zones, workplace, {
+    commuteMode: "transit",
+    targetMinutes: 40,
+    commuteImportance: "medium"
+  });
+  const result = getTopAndLowZonesWithCommuteFeasibility(commuteScoredZones, {
+    recommendedCandidateIds: ["failed-high", "success-a", "success-b"],
+    lowZoneId: "failed-low"
+  });
+
+  assert.deepEqual(result.recommendedZones.map((zone) => zone.id), ["success-a", "success-b"]);
+  assert.equal(result.recommendedZones.every((zone) => zone.commute.isTransitActualApiValue === true), true);
+  assert.equal(result.lowZone.id, "failed-low");
+});
+
 test("buildCommuteSummary uses TMAP walking success for walk scoring", () => {
   const commute = buildCommuteSummary(
     { lat: 36.815, lng: 127.108 },
