@@ -9,6 +9,7 @@ import {
 export const MIN_TARGET_MINUTES = 10;
 export const MAX_TARGET_MINUTES = 90;
 export const WALK_RECOMMENDATION_MAX_MINUTES = 60;
+export const COMMUTE_OVERRUN_NO_RESULT_MINUTES = 30;
 const DEFAULT_TARGET_MINUTES = 40;
 const DEFAULT_IMPORTANCE = "보통";
 
@@ -22,6 +23,19 @@ const IMPORTANCE_ALIASES = {
   low: "낮음",
   medium: "보통",
   high: "높음"
+};
+
+const COMMUTE_TIME_OVERRUN_PENALTIES = {
+  [IMPORTANCE_ALIASES.medium]: {
+    soft: 4,
+    clear: 12,
+    severe: 25
+  },
+  [IMPORTANCE_ALIASES.high]: {
+    soft: 8,
+    clear: 22,
+    severe: 40
+  }
 };
 
 const TRANSPORT_MODE_ALIASES = {
@@ -126,6 +140,42 @@ export function calculateFinalScoreWithCommute(input, legacyCommuteFitScore, leg
   );
 }
 
+export function calculateCommuteTimeExcessPenalty(input = {}) {
+  const commuteImportance = normalizeCommuteImportance(input.commuteImportance);
+  const targetMinutes = normalizeTargetMinutesForCommuteMode(input.targetMinutes, input.commuteMode);
+  const actualMinutes = input.isActualApiValue === true ? getSafeMinutes(input.actualMinutes) : null;
+  const isPenaltyEligible = Boolean(COMMUTE_TIME_OVERRUN_PENALTIES[commuteImportance]);
+
+  if (actualMinutes === null || actualMinutes <= 0) {
+    return {
+      desiredCommuteMinutes: targetMinutes,
+      actualCommuteMinutes: null,
+      commuteTimeExcessMinutes: null,
+      commuteTimeExcessPenalty: 0,
+      isOverDesiredCommuteTime: false,
+      isOverDesiredPlus30: false,
+      isCommuteTimeSuitable: false,
+      isCommuteTimePenaltyEligible: false
+    };
+  }
+
+  const excessMinutes = Math.max(0, Math.round(actualMinutes - targetMinutes));
+  const penalty = isPenaltyEligible
+    ? getCommuteTimeOverrunPenaltyValue(excessMinutes, commuteImportance)
+    : 0;
+
+  return {
+    desiredCommuteMinutes: targetMinutes,
+    actualCommuteMinutes: Math.round(actualMinutes),
+    commuteTimeExcessMinutes: excessMinutes,
+    commuteTimeExcessPenalty: penalty,
+    isOverDesiredCommuteTime: excessMinutes > 0,
+    isOverDesiredPlus30: isPenaltyEligible && excessMinutes >= COMMUTE_OVERRUN_NO_RESULT_MINUTES,
+    isCommuteTimeSuitable: !isPenaltyEligible || excessMinutes < COMMUTE_OVERRUN_NO_RESULT_MINUTES,
+    isCommuteTimePenaltyEligible: isPenaltyEligible
+  };
+}
+
 export function getCommutePolicy(commuteImportance = "medium") {
   const normalizedImportance = normalizeCommuteImportance(commuteImportance);
   const { commuteWeight, commuteMinScore } = getCommuteWeightConfig(normalizedImportance);
@@ -169,17 +219,23 @@ export function applyCommuteToLifeZoneScores(scoredZones = [], workplace, commut
   return scoredZones.map((zone) => {
     const commute = buildCommuteSummary(workplace, zone, commutePreference);
     const baseScore = resolveBaseScore(zone);
-    const finalScoreWithCommute = commute.isCommuteScoreApplied
+    const finalScoreBeforeCommuteTimePenalty = commute.isCommuteScoreApplied
       ? calculateFinalScoreWithCommute({
           baseScore,
           commuteFitScore: commute.fitScore,
           commuteImportance: commute.commuteImportance
         })
       : baseScore;
+    const finalScoreWithCommute = roundScore(clamp(
+      finalScoreBeforeCommuteTimePenalty - (commute.commuteTimeExcessPenalty ?? 0),
+      0,
+      100
+    ));
 
     return {
       ...zone,
       baseScore,
+      finalScoreBeforeCommuteTimePenalty,
       finalScoreWithCommute,
       commute
     };
@@ -231,6 +287,38 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = [], op
         eligibleCandidateCount: eligibleWalkCandidates.length,
         actualSuccessCandidateCount: actualApiSuccessCandidates.length,
         noResultReason: walkNoResultReason
+      }
+    };
+  }
+
+  const commuteTimeNoResultReason = getCommuteTimeNoResultReason({
+    candidates: isWalkMode ? eligibleWalkCandidates : actualApiSuccessCandidates,
+    isCarMode,
+    isTransitMode,
+    isWalkMode
+  });
+
+  if (commuteTimeNoResultReason) {
+    return {
+      recommendedZones: [],
+      lowZone: null,
+      displayZones: [],
+      emptyState: createCommuteTimeNoResultEmptyState(commuteTimeNoResultReason),
+      commuteFeasibilityNotice: createCommuteTimeNoResultNotice(commuteTimeNoResultReason),
+      commuteFeasibilitySummary: createCommuteFeasibilitySummary(scoredLifeZones, {
+        commuteTimeNoResultReason: commuteTimeNoResultReason.reason,
+        commuteTimeNoResultMode: commuteTimeNoResultReason.mode,
+        commuteTimeNoResultCandidateCount: commuteTimeNoResultReason.candidateCount,
+        commuteTimeNoResultThresholdMinutes: commuteTimeNoResultReason.thresholdMinutes,
+        walkHardCapMinutes: isWalkMode ? WALK_RECOMMENDATION_MAX_MINUTES : null,
+        walkEligibleCandidateCount: isWalkMode ? eligibleWalkCandidates.length : null,
+        walkActualSuccessCandidateCount: isWalkMode ? actualApiSuccessCandidates.length : null
+      }),
+      commuteTimeNoResultSummary: {
+        reason: commuteTimeNoResultReason.reason,
+        mode: commuteTimeNoResultReason.mode,
+        candidateCount: commuteTimeNoResultReason.candidateCount,
+        thresholdMinutes: commuteTimeNoResultReason.thresholdMinutes
       }
     };
   }
@@ -316,6 +404,13 @@ export function buildCommuteSummary(workplace, lifeZone, commutePreference = {})
   const isTransitActualApiValue = commuteTimes.transitApi?.isActualApiValue === true;
   const hasWalkingApiResult = Boolean(commuteTimes.walking);
   const isWalkingActualApiValue = commuteTimes.walking?.isActualApiValue === true;
+  const isSelectedCommuteActualApiValue = modeKey === "car"
+    ? isDrivingActualApiValue
+    : modeKey === "transit"
+      ? isTransitActualApiValue
+      : modeKey === "walk"
+        ? isWalkingActualApiValue
+        : false;
   const actualMinutes = isTransitMode && !isTransitActualApiValue
     ? null
     : isWalkMode && hasWalkingApiResult && !isWalkingActualApiValue
@@ -335,6 +430,13 @@ export function buildCommuteSummary(workplace, lifeZone, commutePreference = {})
         commuteImportance
       })
     : null;
+  const commuteTimeExcess = calculateCommuteTimeExcessPenalty({
+    actualMinutes,
+    targetMinutes,
+    commuteImportance,
+    commuteMode,
+    isActualApiValue: isSelectedCommuteActualApiValue && isCommuteScoreApplied
+  });
   const feasibilityStatus = getCommuteFeasibilityStatus({
     actualMinutes,
     targetMinutes,
@@ -349,6 +451,14 @@ export function buildCommuteSummary(workplace, lifeZone, commutePreference = {})
     commuteImportance,
     targetMinutes,
     actualMinutes,
+    desiredCommuteMinutes: commuteTimeExcess.desiredCommuteMinutes,
+    actualCommuteMinutes: commuteTimeExcess.actualCommuteMinutes,
+    commuteTimeExcessMinutes: commuteTimeExcess.commuteTimeExcessMinutes,
+    commuteTimeExcessPenalty: commuteTimeExcess.commuteTimeExcessPenalty,
+    isOverDesiredCommuteTime: commuteTimeExcess.isOverDesiredCommuteTime,
+    isOverDesiredPlus30: commuteTimeExcess.isOverDesiredPlus30,
+    isCommuteTimeSuitable: commuteTimeExcess.isCommuteTimeSuitable,
+    isCommuteTimePenaltyEligible: commuteTimeExcess.isCommuteTimePenaltyEligible,
     fitScore,
     feasibilityStatus,
     feasibilityLabel: getCommuteFeasibilityLabel(feasibilityStatus),
@@ -428,7 +538,11 @@ function createCommuteFeasibilitySummary(scoredLifeZones = [], options = {}) {
     walkHardCapMinutes: options.walkHardCapMinutes ?? null,
     walkEligibleCandidateCount: options.walkEligibleCandidateCount ?? null,
     walkActualSuccessCandidateCount: options.walkActualSuccessCandidateCount ?? null,
-    walkNoResultReason: options.walkNoResultReason ?? null
+    walkNoResultReason: options.walkNoResultReason ?? null,
+    commuteTimeNoResultReason: options.commuteTimeNoResultReason ?? null,
+    commuteTimeNoResultMode: options.commuteTimeNoResultMode ?? null,
+    commuteTimeNoResultCandidateCount: options.commuteTimeNoResultCandidateCount ?? null,
+    commuteTimeNoResultThresholdMinutes: options.commuteTimeNoResultThresholdMinutes ?? null
   };
 }
 
@@ -512,6 +626,27 @@ function isEligibleWalkTopRecommendation(zone = {}) {
     actualMinutes <= WALK_RECOMMENDATION_MAX_MINUTES;
 }
 
+function getCommuteTimeNoResultReason({ candidates = [], isCarMode, isTransitMode, isWalkMode } = {}) {
+  const actualCandidates = Array.isArray(candidates)
+    ? candidates.filter((zone) =>
+        hasActualSelectedCommuteSuccess(zone) &&
+        zone.commute?.isCommuteTimePenaltyEligible === true
+      )
+    : [];
+
+  if (actualCandidates.length === 0) return null;
+
+  const overThresholdCandidates = actualCandidates.filter((zone) => zone.commute?.isOverDesiredPlus30 === true);
+  if (overThresholdCandidates.length !== actualCandidates.length) return null;
+
+  return {
+    reason: "overDesiredPlus30",
+    mode: isCarMode ? "car" : isTransitMode ? "transit" : isWalkMode ? "walk" : "unknown",
+    candidateCount: actualCandidates.length,
+    thresholdMinutes: COMMUTE_OVERRUN_NO_RESULT_MINUTES
+  };
+}
+
 function getZoneIdKey(zone = {}) {
   return String(zone?.id ?? "");
 }
@@ -559,6 +694,32 @@ function createWalkNoResultEmptyState(reason) {
     message: "입력한 직장 위치와 희망 통근 조건 기준으로 도보 60분 이내 생활권을 찾지 못했습니다. 자동차 또는 대중교통 조건으로 다시 확인해보세요."
   };
 }
+function createCommuteTimeNoResultNotice(reason) {
+  const title = getCommuteTimeNoResultTitle(reason?.mode);
+  return `${title} 입력한 희망 통근시간과 직장 위치 기준으로 조건에 맞는 생활권을 찾지 못했습니다. 희망 통근시간을 늘리거나 다른 통근수단으로 다시 확인해보세요.`;
+}
+
+function createCommuteTimeNoResultEmptyState(reason) {
+  return {
+    title: getCommuteTimeNoResultTitle(reason?.mode),
+    message: "입력한 희망 통근시간과 직장 위치 기준으로 조건에 맞는 생활권을 찾지 못했습니다. 희망 통근시간을 늘리거나 다른 통근수단으로 다시 확인해보세요."
+  };
+}
+
+function getCommuteTimeNoResultTitle(mode) {
+  if (mode === "transit") return "대중교통으로 통근하기에 적합한 생활권이 없습니다.";
+  if (mode === "walk") return "도보로 통근하기에 적합한 생활권이 없습니다.";
+  return "자동차로 통근하기에 적합한 생활권이 없습니다.";
+}
+
+function getCommuteTimeOverrunPenaltyValue(excessMinutes, commuteImportance) {
+  const penalties = COMMUTE_TIME_OVERRUN_PENALTIES[commuteImportance];
+  if (!penalties || excessMinutes <= 15) return 0;
+  if (excessMinutes < 20) return penalties.soft;
+  if (excessMinutes < COMMUTE_OVERRUN_NO_RESULT_MINUTES) return penalties.clear;
+  return penalties.severe;
+}
+
 function normalizeCommuteFitInput(input, legacyTargetMinutes, legacyCommuteImportance) {
   if (typeof input === "object" && input !== null) {
     return input;

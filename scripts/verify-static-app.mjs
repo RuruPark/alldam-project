@@ -444,6 +444,17 @@ if (
 }
 
 if (
+  !commuteScoring.includes("COMMUTE_OVERRUN_NO_RESULT_MINUTES = 30") ||
+  !commuteScoring.includes("calculateCommuteTimeExcessPenalty") ||
+  !commuteScoring.includes("commuteTimeExcessPenalty") ||
+  !commuteScoring.includes("isCommuteTimePenaltyEligible") ||
+  !commuteScoring.includes("자동차로 통근하기에 적합한 생활권이 없습니다") ||
+  !commuteScoring.includes("대중교통으로 통근하기에 적합한 생활권이 없습니다")
+) {
+  throw new Error("commuteScoring.js must apply actual-API-only medium/high commute overrun penalties and mode-specific no-result states.");
+}
+
+if (
   !appJs.includes("getTargetMinutesRangeForCommuteMode") ||
   !appJs.includes("normalizeTargetMinutesForCommuteMode") ||
   !appJs.includes("commute-target-control")
