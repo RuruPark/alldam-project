@@ -30,6 +30,7 @@ import {
   shouldFetchDrivingCommute,
   shouldFetchOdsayTransit
 } from "../utils/commuteApiPolicy.js";
+import { buildCommuteApiPreselection } from "../utils/commutePreselection.js";
 import { NaverMapView } from "./NaverMapView.js";
 
 const DEFAULT_PREFERENCES = {
@@ -110,7 +111,8 @@ const state = {
   selectedZoneId: null,
   shouldFocusSelectedZoneOnMap: false,
   pendingResultScrollZoneId: null,
-  isCalculating: false
+  isCalculating: false,
+  apiSelectionSummary: null
 };
 
 let appRoot = null;
@@ -940,6 +942,7 @@ function bindPreferenceEvents() {
         displayZones: []
       };
       state.selectedZoneId = null;
+      state.apiSelectionSummary = null;
       state.validationMessage = "";
       state.view = "results";
       render();
@@ -952,18 +955,34 @@ function bindPreferenceEvents() {
 
     try {
       const baseScoredZones = calculateLifeZoneScores(lifeZoneDataset.lifeZones, state.preferences);
-      const zonesWithCommuteApiResults = await attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selectedWorkplace);
       const normalizedCommutePreference = getNormalizedCommutePreference();
+      const commutePreselection = buildCommuteApiPreselection({
+        lifeZones: baseScoredZones,
+        workplace: selectedWorkplace,
+        commutePreference: normalizedCommutePreference
+      });
+      logCommuteApiSelectionSummary(commutePreselection.apiSelectionSummary);
+      const zonesWithCommuteApiResults = await attachSelectedCommuteApiResultsIfNeeded(
+        commutePreselection.preApiZones,
+        selectedWorkplace,
+        commutePreselection.apiTargetZones
+      );
       const commuteScoredZones = applyCommuteToLifeZoneScores(
         zonesWithCommuteApiResults,
         selectedWorkplace,
         normalizedCommutePreference
       );
       const gradedZones = assignRelativeGrades(commuteScoredZones);
-      const resultBundle = getTopAndLowZonesWithCommuteFeasibility(gradedZones);
+      const resultBundle = getTopAndLowZonesWithCommuteFeasibility(gradedZones, {
+        recommendedCandidateIds: commutePreselection.recommendationShortlistIds.length > 0
+          ? commutePreselection.recommendationShortlistIds
+          : null,
+        lowZoneId: commutePreselection.notRecommendedZoneId
+      });
 
       state.scoredZones = gradedZones;
       state.resultBundle = resultBundle;
+      state.apiSelectionSummary = commutePreselection.apiSelectionSummary;
       state.selectedZoneId = resultBundle.displayZones[0]?.id ?? null;
       state.validationMessage = "";
       state.view = "results";
@@ -974,13 +993,14 @@ function bindPreferenceEvents() {
   });
 }
 
-async function attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selectedWorkplace) {
+async function attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selectedWorkplace, apiTargetZones = baseScoredZones) {
   const commuteMode = getEffectiveCommuteMode();
+  const safeApiTargetZones = Array.isArray(apiTargetZones) ? apiTargetZones : [];
 
   if (shouldFetchDrivingCommute(commuteMode)) {
     const drivingCommuteByZoneId = await fetchDrivingCommuteBatch({
       start: selectedWorkplace,
-      lifeZones: baseScoredZones
+      lifeZones: safeApiTargetZones
     });
 
     return baseScoredZones.map((zone) => ({
@@ -992,7 +1012,7 @@ async function attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selected
   if (shouldFetchOdsayTransit(commuteMode)) {
     const transitCommuteByZoneId = await fetchOdsayTransitCommutes({
       start: selectedWorkplace,
-      lifeZones: baseScoredZones,
+      lifeZones: safeApiTargetZones,
       apiKey: getConfiguredOdsayUriApiKey()
     });
 
@@ -1003,6 +1023,18 @@ async function attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selected
   }
 
   return baseScoredZones;
+}
+
+function logCommuteApiSelectionSummary(summary) {
+  if (!summary || typeof console === "undefined" || typeof console.info !== "function") return;
+
+  console.info("[commute-api-selection]", {
+    selectedCommuteMode: summary.selectedCommuteMode,
+    preApiCandidateCount: summary.preApiCandidateCount,
+    recommendationApiCandidateCount: summary.recommendationApiCandidateCount,
+    notRecommendedApiCandidateIncluded: summary.notRecommendedApiCandidateIncluded,
+    finalApiTargetCount: summary.finalApiTargetCount
+  });
 }
 
 function bindTargetMinuteInputs() {

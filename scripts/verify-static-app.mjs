@@ -42,6 +42,7 @@ const requiredFiles = [
   "src/utils/pointInPolygon.js",
   "src/utils/geoDistance.js",
   "src/utils/commuteEstimator.js",
+  "src/utils/commutePreselection.js",
   "src/utils/commuteScoring.js",
   "src/utils/commuteFeasibility.js",
   "src/utils/riHighlights.js",
@@ -55,6 +56,7 @@ const requiredFiles = [
   ".env.example",
   "tests/cheonanAsanMapBounds.test.mjs",
   "tests/commuteFeasibility.test.mjs",
+  "tests/commutePreselection.test.mjs",
   "tests/commuteTimeInput.test.mjs",
   "tests/drivingApiActualOnly.test.mjs",
   "tests/drivingApiDiagnostics.test.mjs",
@@ -79,6 +81,7 @@ const lifeZoneRepository = await readFile(new URL("../src/data/lifeZoneRepositor
 const workplaceOptions = await readFile(new URL("../src/data/workplaceOptions.js", import.meta.url), "utf8");
 const commuteFeasibility = await readFile(new URL("../src/utils/commuteFeasibility.js", import.meta.url), "utf8");
 const commuteEstimator = await readFile(new URL("../src/utils/commuteEstimator.js", import.meta.url), "utf8");
+const commutePreselection = await readFile(new URL("../src/utils/commutePreselection.js", import.meta.url), "utf8");
 const commuteScoring = await readFile(new URL("../src/utils/commuteScoring.js", import.meta.url), "utf8");
 const riHighlights = await readFile(new URL("../src/utils/riHighlights.js", import.meta.url), "utf8");
 const drivingCommuteApi = await readFile(new URL("../src/utils/drivingCommuteApi.js", import.meta.url), "utf8");
@@ -278,6 +281,17 @@ if (
   !appJs.includes("ODsay 대중교통 기준")
 ) {
   throw new Error("app.js must fetch only the selected commute API and show loading/ODsay transit status.");
+}
+
+if (
+  !appJs.includes("buildCommuteApiPreselection") ||
+  !appJs.includes("apiTargetZones") ||
+  !appJs.includes("recommendationShortlistIds") ||
+  !commutePreselection.includes("preApiScore") ||
+  !commutePreselection.includes("proxyCommuteScore") ||
+  !commutePreselection.includes("SHORTLIST_LIMITS")
+) {
+  throw new Error("app.js must preselect commute API targets from proxy-scored candidates before external calls.");
 }
 
 if (

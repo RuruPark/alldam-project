@@ -185,7 +185,7 @@ export function applyCommuteToLifeZoneScores(scoredZones = [], workplace, commut
   });
 }
 
-export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = []) {
+export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = [], options = {}) {
   if (!Array.isArray(scoredLifeZones) || scoredLifeZones.length === 0) {
     return {
       recommendedZones: [],
@@ -197,22 +197,26 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = []) {
   }
 
   const sortedZones = sortByRecommendationScore(scoredLifeZones);
-  const preferredCandidates = sortedZones.filter((zone) => isPreferredCommuteStatus(getZoneFeasibilityStatus(zone)));
-  const farCandidates = sortedZones.filter((zone) => getZoneFeasibilityStatus(zone) === "far");
-  const unrealisticCandidates = sortedZones.filter((zone) => getZoneFeasibilityStatus(zone) === "unrealistic");
+  const recommendedCandidateIds = createIdSet(options.recommendedCandidateIds);
+  const recommendationPool = recommendedCandidateIds
+    ? sortedZones.filter((zone) => recommendedCandidateIds.has(zone.id))
+    : sortedZones;
+  const preferredRecommendationCandidates = recommendationPool.filter((zone) => isPreferredCommuteStatus(getZoneFeasibilityStatus(zone)));
+  const farRecommendationCandidates = recommendationPool.filter((zone) => getZoneFeasibilityStatus(zone) === "far");
+  const unrealisticRecommendationCandidates = recommendationPool.filter((zone) => getZoneFeasibilityStatus(zone) === "unrealistic");
   const selectedCandidates = [];
   const isCarMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "car");
   const isTransitMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "transit");
   const hasAppliedCommuteScore = scoredLifeZones.some((zone) => zone.commute?.isCommuteScoreApplied === true);
 
-  addUniqueZones(selectedCandidates, preferredCandidates);
-  addUniqueZones(selectedCandidates, farCandidates, 2);
+  addUniqueZones(selectedCandidates, preferredRecommendationCandidates);
+  addUniqueZones(selectedCandidates, farRecommendationCandidates, 2);
 
   let usedScoreFallback = false;
   if (selectedCandidates.length < 2) {
     usedScoreFallback = true;
-    addUniqueZones(selectedCandidates, sortByFallbackCommuteDistance(unrealisticCandidates), 2);
-    addUniqueZones(selectedCandidates, sortedZones, 2);
+    addUniqueZones(selectedCandidates, sortByFallbackCommuteDistance(unrealisticRecommendationCandidates), 2);
+    addUniqueZones(selectedCandidates, recommendationPool, 2);
   }
 
   const recommendedZones = selectedCandidates.slice(0, Math.min(2, sortedZones.length)).map((zone, index) => ({
@@ -221,7 +225,10 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = []) {
     rankLabel: `추천 TOP ${index + 1}`
   }));
   const recommendedIds = new Set(recommendedZones.map((zone) => zone.id));
-  const lowCandidate = [...scoredLifeZones]
+  const requestedLowCandidate = options.lowZoneId
+    ? scoredLifeZones.find((zone) => zone.id === options.lowZoneId && !recommendedIds.has(zone.id))
+    : null;
+  const lowCandidate = requestedLowCandidate ?? [...scoredLifeZones]
     .filter((zone) => !recommendedIds.has(zone.id))
     .sort(compareLowCandidate)[0] ?? null;
   const lowZone = lowCandidate
@@ -349,6 +356,11 @@ function addUniqueZones(target, source, limit = Number.POSITIVE_INFINITY) {
       target.push(zone);
     }
   }
+}
+
+function createIdSet(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return null;
+  return new Set(ids.filter(Boolean));
 }
 
 function sortByRecommendationScore(scoredLifeZones = []) {
