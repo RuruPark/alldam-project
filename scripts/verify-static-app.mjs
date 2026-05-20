@@ -35,6 +35,8 @@ const requiredFiles = [
   "src/utils/naverMapLoader.js",
   "src/utils/naverDirectionsUrl.js",
   "src/utils/drivingCommuteApi.js",
+  "src/utils/odsayTransitApi.js",
+  "src/utils/commuteApiPolicy.js",
   "src/utils/geoJsonPolygon.js",
   "src/utils/cheonanAsanMapBounds.js",
   "src/utils/pointInPolygon.js",
@@ -56,6 +58,8 @@ const requiredFiles = [
   "tests/commuteTimeInput.test.mjs",
   "tests/drivingApiActualOnly.test.mjs",
   "tests/drivingApiDiagnostics.test.mjs",
+  "tests/odsayTransitApi.test.mjs",
+  "tests/commuteApiPolicy.test.mjs",
   "tests/mapFocusBehavior.test.mjs",
   "tests/naverDirectionsUrl.test.mjs",
   "tests/riHighlights.test.mjs",
@@ -68,6 +72,7 @@ await Promise.all(requiredFiles.map((file) => readFile(new URL(`../${file}`, imp
 const indexHtml = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const publicConfig = await readFile(new URL("../public-config.js", import.meta.url), "utf8");
 const vercelConfig = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+const vercelStaticBuild = await readFile(new URL("../scripts/build-vercel-static.mjs", import.meta.url), "utf8");
 const appJs = await readFile(new URL("../src/components/app.js", import.meta.url), "utf8");
 const naverMapView = await readFile(new URL("../src/components/NaverMapView.js", import.meta.url), "utf8");
 const lifeZoneRepository = await readFile(new URL("../src/data/lifeZoneRepository.js", import.meta.url), "utf8");
@@ -76,6 +81,8 @@ const commuteFeasibility = await readFile(new URL("../src/utils/commuteFeasibili
 const commuteEstimator = await readFile(new URL("../src/utils/commuteEstimator.js", import.meta.url), "utf8");
 const commuteScoring = await readFile(new URL("../src/utils/commuteScoring.js", import.meta.url), "utf8");
 const drivingCommuteApi = await readFile(new URL("../src/utils/drivingCommuteApi.js", import.meta.url), "utf8");
+const odsayTransitApi = await readFile(new URL("../src/utils/odsayTransitApi.js", import.meta.url), "utf8");
+const commuteApiPolicy = await readFile(new URL("../src/utils/commuteApiPolicy.js", import.meta.url), "utf8");
 const drivingApiCore = await readFile(new URL("../api/commute/_driving-core.js", import.meta.url), "utf8");
 const drivingApiRoute = await readFile(new URL("../api/commute/driving.js", import.meta.url), "utf8");
 const drivingBatchApiRoute = await readFile(new URL("../api/commute/driving-batch.js", import.meta.url), "utf8");
@@ -157,6 +164,32 @@ if (!publicConfig.includes("LIFE_ZONE_DATA_MODE")) {
   throw new Error("public-config.js must define LIFE_ZONE_DATA_MODE.");
 }
 
+if (!publicConfig.includes("PUBLIC_ODSAY_URI_API_KEY")) {
+  throw new Error("public-config.js must define PUBLIC_ODSAY_URI_API_KEY as a public URI/Web key placeholder.");
+}
+
+if (!vercelStaticBuild.includes("process.env.PUBLIC_ODSAY_URI_API_KEY")) {
+  throw new Error("build-vercel-static.mjs must inject PUBLIC_ODSAY_URI_API_KEY from the Vercel environment.");
+}
+
+if (!odsayTransitApi.includes("URLSearchParams") || !odsayTransitApi.includes("searchPubTransPathT")) {
+  throw new Error("odsayTransitApi.js must build ODsay URI/Web requests with URLSearchParams.");
+}
+
+if (
+  !odsayTransitApi.includes("MISSING_ODSAY_URI_KEY") ||
+  !odsayTransitApi.includes("ODSAY_AUTH_FAILED") ||
+  !odsayTransitApi.includes("ODSAY_TOO_CLOSE") ||
+  !odsayTransitApi.includes("durationMinutes: null") ||
+  !odsayTransitApi.includes("isActualApiValue: false")
+) {
+  throw new Error("odsayTransitApi.js must normalize ODsay success/failure without fallback transit minutes.");
+}
+
+if (!commuteApiPolicy.includes("shouldFetchDrivingCommute") || !commuteApiPolicy.includes("shouldFetchOdsayTransit")) {
+  throw new Error("commuteApiPolicy.js must separate selected commute-mode API calls.");
+}
+
 if (!lifeZoneRepository.includes("generatedLifeZones") || !lifeZoneRepository.includes("mockLifeZones")) {
   throw new Error("lifeZoneRepository.js must keep generatedLifeZones first and mockLifeZones fallback.");
 }
@@ -219,6 +252,16 @@ if (!drivingCommuteApi.includes("isActualApiValue") || !drivingCommuteApi.includ
 
 if (!drivingCommuteApi.includes("fetchDrivingCommuteBatch") || !appJs.includes("fetchDrivingCommuteBatch")) {
   throw new Error("app.js must fetch Vercel driving commute results before car-mode scoring.");
+}
+
+if (
+  !appJs.includes("fetchOdsayTransitCommutes") ||
+  !appJs.includes("shouldFetchDrivingCommute") ||
+  !appJs.includes("shouldFetchOdsayTransit") ||
+  !appJs.includes("isCalculating") ||
+  !appJs.includes("ODsay 대중교통 기준")
+) {
+  throw new Error("app.js must fetch only the selected commute API and show loading/ODsay transit status.");
 }
 
 if (

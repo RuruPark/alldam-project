@@ -51,3 +51,40 @@ test("estimateCommuteTimes marks the result as a distance fallback", () => {
   assert.equal(result.isFallback, true);
   assert.equal(result.provider, "distance-fallback");
 });
+
+test("estimateCommuteTimes applies ODsay transit success values when present", () => {
+  const result = estimateCommuteTimes(workplace, {
+    ...lifeZone,
+    transitCommute: {
+      id: "LZ_TEST",
+      provider: "odsay-public-transit",
+      apiStatus: "success",
+      isActualApiValue: true,
+      durationMinutes: 42,
+      distanceMeters: 12800
+    }
+  });
+
+  assert.equal(result.transit, 42);
+  assert.equal(result.transitApi.provider, "odsay-public-transit");
+  assert.equal(result.transitIsActualApiValue, true);
+});
+
+test("estimateCommuteTimes keeps failed ODsay transit values unavailable instead of fallback minutes", () => {
+  const result = estimateCommuteTimes(workplace, {
+    ...lifeZone,
+    transitCommute: {
+      id: "LZ_TEST",
+      provider: "odsay-public-transit",
+      apiStatus: "failed",
+      errorCode: "ODSAY_NO_ROUTE",
+      isActualApiValue: false,
+      durationMinutes: null,
+      distanceMeters: null
+    }
+  });
+
+  assert.equal(result.transit, null);
+  assert.equal(result.transitApi.errorCode, "ODSAY_NO_ROUTE");
+  assert.equal(result.transitIsActualApiValue, false);
+});

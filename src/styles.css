@@ -355,6 +355,30 @@ p {
   font-weight: 900;
 }
 
+.primary-cta.is-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: wait;
+  opacity: 0.86;
+}
+
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: white;
+  border-radius: 999px;
+  animation: spin 760ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .result-screen {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
@@ -997,6 +1021,10 @@ p {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
+}
+
+.commute-time-grid.is-single {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .commute-time-grid span {

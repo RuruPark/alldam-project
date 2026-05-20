@@ -21,6 +21,14 @@ import {
 import { getVisibleRiHighlightSentences } from "../utils/riHighlights.js";
 import { buildNaverDirectionsUrl } from "../utils/naverDirectionsUrl.js";
 import { fetchDrivingCommuteBatch } from "../utils/drivingCommuteApi.js";
+import {
+  fetchOdsayTransitCommutes,
+  getConfiguredOdsayUriApiKey
+} from "../utils/odsayTransitApi.js";
+import {
+  shouldFetchDrivingCommute,
+  shouldFetchOdsayTransit
+} from "../utils/commuteApiPolicy.js";
 import { NaverMapView } from "./NaverMapView.js";
 
 const DEFAULT_PREFERENCES = {
@@ -101,7 +109,8 @@ const state = {
   resultBundle: null,
   selectedZoneId: null,
   shouldFocusSelectedZoneOnMap: false,
-  pendingResultScrollZoneId: null
+  pendingResultScrollZoneId: null,
+  isCalculating: false
 };
 
 let appRoot = null;
@@ -156,12 +165,32 @@ function renderPreferenceScreen() {
         <div>
           ${state.validationMessage ? `<span class="form-message" role="alert">${state.validationMessage}</span>` : ""}
         </div>
-        <button class="primary-cta" type="button" data-calculate aria-label="생활권 점수 계산하기">
-          생활권 점수 계산하기
+        <button
+          class="primary-cta ${state.isCalculating ? "is-loading" : ""}"
+          type="button"
+          data-calculate
+          aria-label="생활권 점수 계산하기"
+          aria-busy="${state.isCalculating}"
+          ${state.isCalculating ? "disabled" : ""}
+        >
+          ${state.isCalculating ? renderCalculationLoadingContent() : "생활권 점수 계산하기"}
         </button>
       </footer>
     </main>
   `;
+}
+
+function renderCalculationLoadingContent() {
+  return `
+    <span class="loading-spinner" aria-hidden="true"></span>
+    <span aria-live="polite">${getCalculationLoadingText()}</span>
+  `;
+}
+
+function getCalculationLoadingText() {
+  if (state.commutePreference.commuteMode === "car") return "네이버 길찾기 기준 계산 중...";
+  if (state.commutePreference.commuteMode === "transit") return "ODsay 대중교통 기준 계산 중...";
+  return "생활권 계산 중...";
 }
 
 function renderPreferenceCard(axis) {
@@ -421,9 +450,7 @@ function renderMarkerTooltip(zone) {
     <span class="marker-tooltip">
       <strong>${zone.name}</strong>
       <span>${zone.grade} 등급</span>
-      ${renderCarTooltipLine(zone.commute)}
-      <span>대중교통 약 ${formatMinutes(zone.commute.commuteTimes.transit)}분</span>
-      <span>도보 약 ${formatMinutes(zone.commute.commuteTimes.walk)}분</span>
+      ${renderSelectedMarkerCommuteLine(zone.commute)}
       <span>${zone.commute.feasibilityLabel ?? zone.commute.statusLabel}</span>
     </span>
   `;
@@ -509,12 +536,10 @@ function renderCommuteSummaryCard(zone, workplace) {
         <span>${selectedSummary.meta}</span>
       </div>
       <p>${formatWorkplaceName(workplace)} 직장 기준 ${commute.commuteModeLabel} 예상 통근시간입니다.</p>
-      <div class="commute-time-grid" aria-label="통근수단별 예상 소요시간">
-        ${renderCarCommuteTimeItem(commute)}
-        <span>대중교통 약 ${formatMinutes(commute.commuteTimes.transit)}분</span>
-        <span>도보 약 ${formatMinutes(commute.commuteTimes.walk)}분</span>
+      <div class="commute-time-grid is-single" aria-label="선택한 통근수단 예상 소요시간">
+        ${renderSelectedCommuteTimeItem(commute)}
       </div>
-      ${renderDrivingCommuteStatus(commute)}
+      ${renderSelectedCommuteStatus(commute)}
       ${renderNaverDirectionsLink(zone, workplace)}
     </div>
   `;
@@ -522,6 +547,7 @@ function renderCommuteSummaryCard(zone, workplace) {
 
 function getSelectedCommuteSummary(commute) {
   const isCarMode = commute.commuteMode === "car";
+  const isTransitMode = commute.commuteMode === "transit";
 
   if (isCarMode && !commute.isDrivingActualApiValue) {
     return {
@@ -530,10 +556,33 @@ function getSelectedCommuteSummary(commute) {
     };
   }
 
+  if (isTransitMode && !commute.isTransitActualApiValue) {
+    return {
+      title: "대중교통 경로 정보 없음",
+      meta: `희망 ${commute.targetMinutes}분 · 통근 조건 미반영`
+    };
+  }
+
   return {
     title: `${commute.commuteModeLabel} 약 ${formatMinutes(commute.actualMinutes)}분`,
-    meta: `${commute.feasibilityLabel ?? commute.statusLabel} · 희망 ${commute.targetMinutes}분 · ${isCarMode ? "네이버 길찾기 기준" : "추정값"}`
+    meta: `${commute.feasibilityLabel ?? commute.statusLabel} · 희망 ${commute.targetMinutes}분 · ${getSelectedCommuteSourceLabel(commute)}`
   };
+}
+
+function getSelectedCommuteSourceLabel(commute) {
+  if (commute.commuteMode === "car") return "네이버 길찾기 기준";
+  if (commute.commuteMode === "transit") return "ODsay 대중교통 기준";
+  return "거리 기반 추정";
+}
+
+function renderSelectedCommuteTimeItem(commute) {
+  if (commute.commuteMode === "car") return renderCarCommuteTimeItem(commute);
+  if (commute.commuteMode === "transit") return renderTransitCommuteTimeItem(commute);
+  if (commute.commuteMode === "walk") {
+    return `<span>도보 약 ${formatMinutes(commute.commuteTimes.walk)}분<small>거리 기반 추정</small></span>`;
+  }
+
+  return `<span>${commute.commuteModeLabel} 약 ${formatMinutes(commute.actualMinutes)}분<small>거리 기반 추정</small></span>`;
 }
 
 function renderCarCommuteTimeItem(commute) {
@@ -552,6 +601,46 @@ function renderCarTooltipLine(commute) {
   return `<span>자동차 길찾기 정보 없음</span>`;
 }
 
+function renderSelectedMarkerCommuteLine(commute) {
+  if (commute.commuteMode === "car") return renderCarTooltipLine(commute);
+  if (commute.commuteMode === "transit") {
+    return commute.isTransitActualApiValue
+      ? `<span>대중교통 약 ${formatMinutes(commute.commuteTimes.transit)}분</span>`
+      : `<span>대중교통 경로 정보 없음</span>`;
+  }
+  if (commute.commuteMode === "walk") {
+    return `<span>도보 약 ${formatMinutes(commute.commuteTimes.walk)}분</span>`;
+  }
+  return `<span>${commute.commuteModeLabel} 약 ${formatMinutes(commute.actualMinutes)}분</span>`;
+}
+
+function renderTransitCommuteTimeItem(commute) {
+  if (commute.isTransitActualApiValue) {
+    const fareText = Number.isFinite(Number(commute.transitFareKrw))
+      ? `요금 ${Number(commute.transitFareKrw).toLocaleString("ko-KR")}원`
+      : null;
+    const busText = Number.isFinite(Number(commute.transitBusCount)) ? `버스 ${commute.transitBusCount}회` : null;
+    const subwayText = Number.isFinite(Number(commute.transitSubwayCount)) ? `지하철 ${commute.transitSubwayCount}회` : null;
+    const details = [fareText, busText, subwayText].filter(Boolean).join(" · ");
+
+    return `
+      <span>
+        대중교통 약 ${formatMinutes(commute.commuteTimes.transit)}분
+        <small>ODsay 대중교통 기준</small>
+        ${details ? `<small>${details}</small>` : ""}
+      </span>
+    `;
+  }
+
+  return `<span class="is-unavailable">대중교통 경로 불러오기 실패</span>`;
+}
+
+function renderSelectedCommuteStatus(commute) {
+  if (commute.commuteMode === "car") return renderDrivingCommuteStatus(commute);
+  if (commute.commuteMode === "transit") return renderTransitCommuteStatus(commute);
+  return "";
+}
+
 function renderDrivingCommuteStatus(commute) {
   if (commute.isDrivingActualApiValue) {
     return `<p class="commute-api-status is-success">자동차 통근시간은 네이버 길찾기 기준입니다.</p>`;
@@ -565,6 +654,19 @@ function renderDrivingCommuteStatus(commute) {
     <p class="commute-api-status is-failed">
       ${commute.drivingMessage ?? "자동차 길찾기 정보를 불러오지 못했습니다."}
       <small>${getDrivingCommuteDebugText(commute)}</small>
+    </p>
+  `;
+}
+
+function renderTransitCommuteStatus(commute) {
+  if (commute.isTransitActualApiValue) {
+    return `<p class="commute-api-status is-success">대중교통 통근시간은 ODsay 대중교통 기준입니다.</p>`;
+  }
+
+  return `
+    <p class="commute-api-status is-failed">
+      ${commute.transitMessage ?? "대중교통 경로 불러오기 실패"}
+      <small>${getTransitCommuteDebugText(commute)}</small>
     </p>
   `;
 }
@@ -590,6 +692,29 @@ function getDrivingCommuteDebugText(commute = {}) {
   }
 
   return "통근 조건은 자동차 실제 길찾기 기준으로 반영되지 않았습니다.";
+}
+
+function getTransitCommuteDebugText(commute = {}) {
+  if (commute.transitErrorCode === "MISSING_ODSAY_URI_KEY") {
+    return "Vercel 환경변수 PUBLIC_ODSAY_URI_API_KEY 등록과 재배포가 필요합니다.";
+  }
+
+  if (
+    commute.transitErrorCode === "ODSAY_AUTH_FAILED" ||
+    commute.transitErrorCode === "ODSAY_PLATFORM_MISMATCH"
+  ) {
+    return "ODsay URI/Web Key와 등록 도메인을 확인해주세요.";
+  }
+
+  if (commute.transitErrorCode === "ODSAY_RATE_LIMITED") {
+    return "ODsay 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
+  }
+
+  if (commute.transitErrorCode) {
+    return `오류 코드: ${commute.transitErrorCode}`;
+  }
+
+  return "통근 조건은 대중교통 실제 경로 기준으로 반영되지 않았습니다.";
 }
 
 function renderNaverDirectionsLink(zone, workplace) {
@@ -795,6 +920,8 @@ function bindPreferenceEvents() {
   bindCommuteOptionButtons();
 
   appRoot.querySelector("[data-calculate]")?.addEventListener("click", async () => {
+    if (state.isCalculating) return;
+
     const selectedWorkplace = getSelectedWorkplace();
 
     if (!selectedWorkplace) {
@@ -817,39 +944,60 @@ function bindPreferenceEvents() {
       return;
     }
 
-    const baseScoredZones = calculateLifeZoneScores(lifeZoneDataset.lifeZones, state.preferences);
-    const zonesWithDrivingCommutes = await attachDrivingCommutesIfNeeded(baseScoredZones, selectedWorkplace);
-    const commuteScoredZones = applyCommuteToLifeZoneScores(
-      zonesWithDrivingCommutes,
-      selectedWorkplace,
-      state.commutePreference
-    );
-    const gradedZones = assignRelativeGrades(commuteScoredZones);
-    const resultBundle = getTopAndLowZonesWithCommuteFeasibility(gradedZones);
-
-    state.scoredZones = gradedZones;
-    state.resultBundle = resultBundle;
-    state.selectedZoneId = resultBundle.displayZones[0]?.id ?? null;
+    state.isCalculating = true;
     state.validationMessage = "";
-    state.view = "results";
     render();
+
+    try {
+      const baseScoredZones = calculateLifeZoneScores(lifeZoneDataset.lifeZones, state.preferences);
+      const zonesWithCommuteApiResults = await attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selectedWorkplace);
+      const commuteScoredZones = applyCommuteToLifeZoneScores(
+        zonesWithCommuteApiResults,
+        selectedWorkplace,
+        state.commutePreference
+      );
+      const gradedZones = assignRelativeGrades(commuteScoredZones);
+      const resultBundle = getTopAndLowZonesWithCommuteFeasibility(gradedZones);
+
+      state.scoredZones = gradedZones;
+      state.resultBundle = resultBundle;
+      state.selectedZoneId = resultBundle.displayZones[0]?.id ?? null;
+      state.validationMessage = "";
+      state.view = "results";
+    } finally {
+      state.isCalculating = false;
+      render();
+    }
   });
 }
 
-async function attachDrivingCommutesIfNeeded(baseScoredZones, selectedWorkplace) {
-  if (state.commutePreference.commuteMode !== "car") {
-    return baseScoredZones;
+async function attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selectedWorkplace) {
+  if (shouldFetchDrivingCommute(state.commutePreference.commuteMode)) {
+    const drivingCommuteByZoneId = await fetchDrivingCommuteBatch({
+      start: selectedWorkplace,
+      lifeZones: baseScoredZones
+    });
+
+    return baseScoredZones.map((zone) => ({
+      ...zone,
+      drivingCommute: drivingCommuteByZoneId.get(zone.id) ?? null
+    }));
   }
 
-  const drivingCommuteByZoneId = await fetchDrivingCommuteBatch({
-    start: selectedWorkplace,
-    lifeZones: baseScoredZones
-  });
+  if (shouldFetchOdsayTransit(state.commutePreference.commuteMode)) {
+    const transitCommuteByZoneId = await fetchOdsayTransitCommutes({
+      start: selectedWorkplace,
+      lifeZones: baseScoredZones,
+      apiKey: getConfiguredOdsayUriApiKey()
+    });
 
-  return baseScoredZones.map((zone) => ({
-    ...zone,
-    drivingCommute: drivingCommuteByZoneId.get(zone.id) ?? null
-  }));
+    return baseScoredZones.map((zone) => ({
+      ...zone,
+      transitCommute: transitCommuteByZoneId.get(zone.id) ?? null
+    }));
+  }
+
+  return baseScoredZones;
 }
 
 function bindTargetMinuteInputs() {

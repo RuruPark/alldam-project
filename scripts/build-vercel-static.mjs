@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,6 +33,9 @@ const requiredDistEntries = [
   "src/data/generatedLifeZones.js",
   "src/data/cheonanAsanEmdBoundaries.js"
 ];
+
+const publicConfigPath = join(projectRoot, "public-config.js");
+const distPublicConfigPath = join(distDir, "public-config.js");
 
 async function pathExists(path) {
   try {
@@ -113,6 +116,27 @@ async function assertNoEnvFilesCopied() {
   }
 }
 
+function extractPublicConfigString(configSource, key, fallback = "") {
+  const pattern = new RegExp(`${key}\\s*:\\s*["']([^"']*)["']`);
+  const match = configSource.match(pattern);
+  return match?.[1] ?? fallback;
+}
+
+async function writeVercelPublicConfig() {
+  const sourceConfig = await readFile(publicConfigPath, "utf8");
+  const publicConfig = {
+    NAVER_MAP_CLIENT_ID: extractPublicConfigString(sourceConfig, "NAVER_MAP_CLIENT_ID"),
+    LIFE_ZONE_DATA_MODE: extractPublicConfigString(sourceConfig, "LIFE_ZONE_DATA_MODE", "generated"),
+    PUBLIC_ODSAY_URI_API_KEY: process.env.PUBLIC_ODSAY_URI_API_KEY ?? ""
+  };
+
+  await writeFile(
+    distPublicConfigPath,
+    `window.__APP_CONFIG__ = ${JSON.stringify(publicConfig, null, 2)};\n`,
+    "utf8"
+  );
+}
+
 await rm(distDir, { recursive: true, force: true });
 await mkdir(distDir, { recursive: true });
 
@@ -124,6 +148,7 @@ for (const entry of optionalEntries) {
   await copyOptionalEntry(entry);
 }
 
+await writeVercelPublicConfig();
 await assertForbiddenEntriesAbsent();
 await assertNoEnvFilesCopied();
 await assertRequiredDistEntriesPresent();

@@ -197,6 +197,7 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = []) {
   const unrealisticCandidates = sortedZones.filter((zone) => getZoneFeasibilityStatus(zone) === "unrealistic");
   const selectedCandidates = [];
   const isCarMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "car");
+  const isTransitMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "transit");
   const hasAppliedCommuteScore = scoredLifeZones.some((zone) => zone.commute?.isCommuteScoreApplied === true);
 
   addUniqueZones(selectedCandidates, preferredCandidates);
@@ -231,7 +232,7 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = []) {
     recommendedZones,
     lowZone,
     displayZones,
-    commuteFeasibilityNotice: createCommuteNotice({ usedScoreFallback, isCarMode, hasAppliedCommuteScore }),
+    commuteFeasibilityNotice: createCommuteNotice({ usedScoreFallback, isCarMode, isTransitMode, hasAppliedCommuteScore }),
     commuteFeasibilitySummary: createCommuteFeasibilitySummary(scoredLifeZones, { usedScoreFallback })
   };
 }
@@ -241,13 +242,20 @@ export function buildCommuteSummary(workplace, lifeZone, commutePreference = {})
   const commuteImportance = commutePreference.commuteImportance ?? DEFAULT_IMPORTANCE;
   const targetMinutes = normalizeTargetMinutes(commutePreference.targetMinutes);
   const modeKey = getCommuteTimeKey(normalizeTransportMode(commuteMode));
-  const actualMinutes = selectActualCommuteMinutes({
+  const selectedActualMinutes = selectActualCommuteMinutes({
     commuteTimes,
     transportMode: commuteMode
   });
   const isCarMode = modeKey === "car";
+  const isTransitMode = modeKey === "transit";
   const isDrivingActualApiValue = commuteTimes.driving?.isActualApiValue === true;
-  const isCommuteScoreApplied = !isCarMode || isDrivingActualApiValue;
+  const isTransitActualApiValue = commuteTimes.transitApi?.isActualApiValue === true;
+  const actualMinutes = isTransitMode && !isTransitActualApiValue ? null : selectedActualMinutes;
+  const isCommuteScoreApplied = isCarMode
+    ? isDrivingActualApiValue
+    : isTransitMode
+      ? isTransitActualApiValue
+      : true;
   const fitScore = isCommuteScoreApplied
     ? calculateCommuteFitScore({
         actualMinutes,
@@ -280,7 +288,15 @@ export function buildCommuteSummary(workplace, lifeZone, commutePreference = {})
     drivingApiStatus: commuteTimes.driving?.apiStatus ?? "unavailable",
     drivingErrorCode: commuteTimes.driving?.errorCode ?? null,
     drivingDiagnostics: commuteTimes.driving?.diagnostics ?? null,
-    drivingMessage: commuteTimes.driving?.message ?? null
+    drivingMessage: commuteTimes.driving?.message ?? null,
+    isTransitActualApiValue,
+    transitApiStatus: commuteTimes.transitApi?.apiStatus ?? "unavailable",
+    transitErrorCode: commuteTimes.transitApi?.errorCode ?? null,
+    transitDiagnostics: commuteTimes.transitApi?.diagnostics ?? null,
+    transitMessage: commuteTimes.transitApi?.message ?? null,
+    transitFareKrw: commuteTimes.transitApi?.fareKrw ?? null,
+    transitBusCount: commuteTimes.transitApi?.busTransitCount ?? null,
+    transitSubwayCount: commuteTimes.transitApi?.subwayTransitCount ?? null
   };
 }
 
@@ -383,9 +399,13 @@ function isPreferredCommuteStatus(status) {
   return status === "withinTarget" || status === "acceptable";
 }
 
-function createCommuteNotice({ usedScoreFallback, isCarMode, hasAppliedCommuteScore }) {
+function createCommuteNotice({ usedScoreFallback, isCarMode, isTransitMode, hasAppliedCommuteScore }) {
   if (isCarMode && !hasAppliedCommuteScore) {
     return "자동차 길찾기 정보를 불러오지 못해 통근 조건은 반영하지 않았습니다.";
+  }
+
+  if (isTransitMode && !hasAppliedCommuteScore) {
+    return "대중교통 경로 정보를 불러오지 못해 통근 조건은 반영하지 않았습니다.";
   }
 
   return usedScoreFallback
@@ -424,6 +444,7 @@ function getCommuteTimeKey(transportMode) {
 }
 
 function getSafeMinutes(value) {
+  if (value === null || value === undefined || value === "") return null;
   const numericValue = Number(value);
   return Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : null;
 }

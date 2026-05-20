@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildCommuteSummary,
   calculateCommuteFitScore,
   calculateFinalScoreWithCommute,
   getCommuteWeightConfig,
@@ -108,6 +109,87 @@ test("selectActualCommuteMinutes falls back to the shortest available value for 
     commuteTimes: {},
     transportMode: "unknown"
   }), null);
+});
+
+test("buildCommuteSummary uses ODsay transit success for transit scoring", () => {
+  const commute = buildCommuteSummary(
+    { lat: 36.815, lng: 127.108 },
+    {
+      id: "LZ_TEST",
+      centerLat: 36.773,
+      centerLng: 127.059,
+      transitCommute: {
+        id: "LZ_TEST",
+        provider: "odsay-public-transit",
+        apiStatus: "success",
+        isActualApiValue: true,
+        durationMinutes: 42,
+        distanceMeters: 12800
+      }
+    },
+    {
+      commuteMode: "transit",
+      targetMinutes: 45,
+      commuteImportance: "medium"
+    }
+  );
+
+  assert.equal(commute.actualMinutes, 42);
+  assert.equal(commute.isTransitActualApiValue, true);
+  assert.equal(commute.isCommuteScoreApplied, true);
+  assert.equal(typeof commute.fitScore, "number");
+});
+
+test("buildCommuteSummary does not use fallback transit minutes after ODsay failure", () => {
+  const commute = buildCommuteSummary(
+    { lat: 36.815, lng: 127.108 },
+    {
+      id: "LZ_TEST",
+      centerLat: 36.773,
+      centerLng: 127.059,
+      transitCommute: {
+        id: "LZ_TEST",
+        provider: "odsay-public-transit",
+        apiStatus: "failed",
+        errorCode: "ODSAY_NO_ROUTE",
+        isActualApiValue: false,
+        durationMinutes: null,
+        distanceMeters: null
+      }
+    },
+    {
+      commuteMode: "transit",
+      targetMinutes: 45,
+      commuteImportance: "medium"
+    }
+  );
+
+  assert.equal(commute.actualMinutes, null);
+  assert.equal(commute.commuteTimes.transit, null);
+  assert.equal(commute.isTransitActualApiValue, false);
+  assert.equal(commute.isCommuteScoreApplied, false);
+  assert.equal(commute.fitScore, null);
+});
+
+test("buildCommuteSummary does not apply transit scoring without an ODsay result", () => {
+  const commute = buildCommuteSummary(
+    { lat: 36.815, lng: 127.108 },
+    {
+      id: "LZ_TEST",
+      centerLat: 36.773,
+      centerLng: 127.059
+    },
+    {
+      commuteMode: "transit",
+      targetMinutes: 45,
+      commuteImportance: "medium"
+    }
+  );
+
+  assert.equal(commute.actualMinutes, null);
+  assert.equal(commute.isTransitActualApiValue, false);
+  assert.equal(commute.isCommuteScoreApplied, false);
+  assert.equal(commute.fitScore, null);
 });
 
 test("applyCommuteScoringToLifeZones adds commute scoring fields and sorts by final score", () => {
