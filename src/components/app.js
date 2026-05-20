@@ -8,7 +8,8 @@ import {
 import { getLifeZoneDataset } from "../data/lifeZoneRepository.js";
 import {
   assignRelativeGrades,
-  calculateLifeZoneScores
+  calculateLifeZoneScores,
+  getTopAndLowZones
 } from "../utils/lifeZoneScoring.js";
 import {
   applyCommuteToLifeZoneScores,
@@ -101,6 +102,13 @@ const MAP_BOUNDS = {
   maxLng: 127.18
 };
 
+export const NO_WORKPLACE_ID = "none";
+
+export const RECOMMENDATION_MODES = Object.freeze({
+  commuteBased: "commuteBased",
+  infraOnly: "infraOnly"
+});
+
 const state = {
   view: "preferences",
   activeMapFilter: "transport",
@@ -114,6 +122,8 @@ const state = {
   shouldFocusSelectedZoneOnMap: false,
   pendingResultScrollZoneId: null,
   isCalculating: false,
+  recommendationMode: RECOMMENDATION_MODES.commuteBased,
+  calculationRunId: 0,
   apiSelectionSummary: null
 };
 
@@ -192,6 +202,10 @@ function renderCalculationLoadingContent() {
 }
 
 function getCalculationLoadingText() {
+  if (state.recommendationMode === RECOMMENDATION_MODES.infraOnly || getRecommendationMode() === RECOMMENDATION_MODES.infraOnly) {
+    return "인프라 선호도 기준 생활권 계산 중...";
+  }
+
   const commuteMode = getEffectiveCommuteMode();
   if (commuteMode === "car") return "네이버 길찾기 기준 계산 중...";
   if (commuteMode === "transit") return "ODsay 대중교통 기준 계산 중...";
@@ -242,7 +256,9 @@ function renderWorkplaceCommuteSection() {
   const districts = getWorkplaceDistrictsByCityAndDataMode(city, dataMode);
   const districtValue = city === "아산시" ? "해당 없음" : district;
   const emds = getWorkplaceEmdsBySelectionAndDataMode(city, districtValue, dataMode);
-  const selectedWorkplace = findWorkplaceCenterByCode(emdCode, dataMode);
+  const selectedWorkplaceCode = getSelectedWorkplaceCode();
+  const isInfraOnlyMode = isNoWorkplaceCode(selectedWorkplaceCode);
+  const selectedWorkplace = isInfraOnlyMode ? null : findWorkplaceCenterByCode(selectedWorkplaceCode, dataMode);
   const modeLabel = lifeZoneDataset.sourceType === "mock" ? "가상 데이터 기준 직장 위치 선택" : "실제 데이터 기준 직장 위치 선택";
   const targetRange = getTargetMinutesRangeForCommuteMode(commuteMode);
   const targetMinutes = normalizeTargetMinutesForCommuteMode(state.commutePreference.targetMinutes, commuteMode);
@@ -274,15 +290,17 @@ function renderWorkplaceCommuteSection() {
 
         <label class="field-group" for="workplace-emd">
           <span>읍면동 선택</span>
-          <select id="workplace-emd" data-workplace-emd aria-invalid="${!selectedWorkplace && Boolean(state.validationMessage)}">
+          <select id="workplace-emd" data-workplace-emd aria-invalid="${!isInfraOnlyMode && !selectedWorkplace && Boolean(state.validationMessage)}">
+            <option value="${NO_WORKPLACE_ID}" ${isInfraOnlyMode ? "selected" : ""}>선택안함</option>
             ${emds.length === 0 ? `<option value="">선택 가능한 읍면동 없음</option>` : ""}
             ${emds.map((emd) => `
-              <option value="${emd.emdCode}" ${emd.emdCode === emdCode ? "selected" : ""}>${emd.emdName}</option>
+              <option value="${emd.emdCode}" ${emd.emdCode === selectedWorkplaceCode ? "selected" : ""}>${emd.emdName}</option>
             `).join("")}
           </select>
         </label>
       </div>
 
+      ${isInfraOnlyMode ? renderInfraOnlyCommuteNotice() : ""}
       <div class="commute-controls">
         <div class="field-group full-width">
           <span>통근 중요도</span>
@@ -294,6 +312,7 @@ function renderWorkplaceCommuteSection() {
                 role="radio"
                 aria-checked="${state.commutePreference.commuteImportance === option.value}"
                 data-commute-importance="${option.value}"
+                ${isInfraOnlyMode ? "disabled" : ""}
               >
                 ${option.label}
               </button>
@@ -312,6 +331,7 @@ function renderWorkplaceCommuteSection() {
                 role="radio"
                 aria-checked="${commuteMode === option.value}"
                 data-commute-mode="${option.value}"
+                ${isInfraOnlyMode ? "disabled" : ""}
               >
                 ${option.label}
               </button>
@@ -333,6 +353,7 @@ function renderWorkplaceCommuteSection() {
               value="${targetMinutes}"
               data-commute-target-range
               aria-label="희망 통근시간 슬라이더"
+              ${isInfraOnlyMode ? "disabled" : ""}
             />
             <span class="commute-target-value" data-commute-target-display>${targetMinutes}분</span>
           </div>
@@ -340,6 +361,14 @@ function renderWorkplaceCommuteSection() {
         </div>
       </div>
     </section>
+  `;
+}
+
+function renderInfraOnlyCommuteNotice() {
+  return `
+    <div class="infra-only-commute-notice" role="note">
+      직장 위치를 선택하지 않으면 인프라 선호도만으로 생활권을 추천합니다.
+    </div>
   `;
 }
 
@@ -351,7 +380,12 @@ function renderResultScreen() {
   };
   const displayZones = bundle.displayZones;
   const selectedZone = displayZones.find((zone) => zone.id === state.selectedZoneId) ?? displayZones[0] ?? null;
-  const selectedWorkplace = getSelectedWorkplace();
+  const isInfraOnlyMode = state.recommendationMode === RECOMMENDATION_MODES.infraOnly;
+  const selectedWorkplace = isInfraOnlyMode ? null : getSelectedWorkplace();
+  const resultEyebrow = isInfraOnlyMode ? "인프라 선호도 기반 생활권 추천" : "선호도 기반 생활권 비교";
+  const resultSummary = isInfraOnlyMode
+    ? "직장 위치를 선택하지 않아 통근 조건은 반영하지 않았습니다."
+    : "입력한 생활 조건과 직장 위치를 기준으로 살펴본 결과입니다.";
 
   return `
     <main class="result-screen">
@@ -376,9 +410,9 @@ function renderResultScreen() {
       <aside class="result-panel" aria-label="생활권 추천 결과">
         <div class="panel-header">
           <div>
-            <p class="eyebrow">선호도 기반 생활권 비교</p>
+            <p class="eyebrow">${resultEyebrow}</p>
             <h1>생활권 추천 결과</h1>
-            <p class="panel-summary">입력한 생활 조건과 직장 위치를 기준으로 살펴본 결과입니다.</p>
+            <p class="panel-summary">${resultSummary}</p>
           </div>
         </div>
 
@@ -389,7 +423,7 @@ function renderResultScreen() {
         ${!bundle.emptyState && bundle.commuteFeasibilityNotice ? renderCommuteFeasibilityNotice(bundle.commuteFeasibilityNotice) : ""}
         ${renderResultActions()}
         ${renderPreferenceReadout()}
-        ${selectedWorkplace ? renderCommuteReadout(selectedWorkplace) : ""}
+        ${isInfraOnlyMode ? renderInfraOnlyReadout() : selectedWorkplace ? renderCommuteReadout(selectedWorkplace) : ""}
       </aside>
     </main>
   `;
@@ -495,6 +529,7 @@ function renderResultCard(zone, selectedZoneId, workplace) {
       </div>
 
       ${zone.commute ? renderCommuteSummaryCard(zone, workplace) : ""}
+      ${!zone.commute && state.recommendationMode === RECOMMENDATION_MODES.infraOnly ? renderInfraOnlySummaryCard(zone) : ""}
 
       <div class="axis-score-list" aria-label="분야별 점수 요약">
         ${renderAxisScore("교통", zone.axisScores.transport)}
@@ -530,6 +565,18 @@ function renderRiHighlights(zone) {
       <div class="ri-highlight-list">
         ${sentences.map((sentence) => `<span>${sentence}</span>`).join("")}
       </div>
+    </div>
+  `;
+}
+
+function renderInfraOnlySummaryCard(zone) {
+  const totalScore = formatScore(zone.totalScore);
+  const strongestAxis = getStrongestAxisLabel(zone);
+
+  return `
+    <div class="infra-only-summary-card">
+      <strong>${zone.rankType === "low" ? "인프라 선호도와 상대적으로 맞지 않는 생활권" : `${strongestAxis} 선호와 잘 맞는 생활권`}</strong>
+      <span>종합 인프라 적합도 ${totalScore}점</span>
     </div>
   `;
 }
@@ -853,6 +900,28 @@ function renderCommuteReadout(workplace) {
   `;
 }
 
+function renderInfraOnlyReadout() {
+  return `
+    <section class="preference-readout commute-readout is-infra-only" aria-label="통근 조건 미반영 요약">
+      <h2>추천 기준</h2>
+      <div class="readout-grid">
+        <div>
+          <span>직장 위치</span>
+          <strong>선택안함</strong>
+        </div>
+        <div>
+          <span>통근 조건</span>
+          <strong>반영하지 않음</strong>
+        </div>
+        <div>
+          <span>추천 기준</span>
+          <strong>인프라 선호도</strong>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderResultActions() {
   return `
     <div class="result-actions">
@@ -959,6 +1028,7 @@ function bindPreferenceEvents() {
         ...state.preferences,
         [axis.preferenceKey]: button.dataset.importance
       };
+      invalidatePendingCalculation();
       state.validationMessage = "";
       render();
     });
@@ -978,6 +1048,7 @@ function bindPreferenceEvents() {
         ...state.preferences,
         [axis.preferenceKey]: IMPORTANCE_OPTIONS[nextIndex].value
       };
+      invalidatePendingCalculation();
       state.validationMessage = "";
       render();
       focusAfterRender(`[data-axis="${axis.id}"][data-importance="${IMPORTANCE_OPTIONS[nextIndex].value}"]`);
@@ -991,6 +1062,7 @@ function bindPreferenceEvents() {
 
     state.workplaceSelection = { city, district, emdCode: firstEmd?.emdCode ?? "" };
     state.commutePreference = { ...state.commutePreference, workplaceEmdCode: firstEmd?.emdCode ?? "" };
+    invalidatePendingCalculation();
     state.validationMessage = "";
     render();
   });
@@ -1009,19 +1081,25 @@ function bindPreferenceEvents() {
       emdCode: firstEmd?.emdCode ?? ""
     };
     state.commutePreference = { ...state.commutePreference, workplaceEmdCode: firstEmd?.emdCode ?? "" };
+    invalidatePendingCalculation();
     state.validationMessage = "";
     render();
   });
 
   appRoot.querySelector("[data-workplace-emd]")?.addEventListener("change", (event) => {
+    const workplaceEmdCode = normalizeWorkplaceEmdCode(event.target.value);
     state.workplaceSelection = {
       ...state.workplaceSelection,
-      emdCode: event.target.value
+      emdCode: workplaceEmdCode
     };
     state.commutePreference = {
       ...state.commutePreference,
-      workplaceEmdCode: event.target.value
+      workplaceEmdCode
     };
+    state.recommendationMode = isNoWorkplaceCode(workplaceEmdCode)
+      ? RECOMMENDATION_MODES.infraOnly
+      : RECOMMENDATION_MODES.commuteBased;
+    invalidatePendingCalculation();
     state.validationMessage = "";
     render();
   });
@@ -1032,13 +1110,11 @@ function bindPreferenceEvents() {
   appRoot.querySelector("[data-calculate]")?.addEventListener("click", async () => {
     if (state.isCalculating) return;
 
+    const calculationRunId = state.calculationRunId + 1;
+    state.calculationRunId = calculationRunId;
     const selectedWorkplace = getSelectedWorkplace();
-
-    if (!selectedWorkplace) {
-      state.validationMessage = "직장 위치와 통근 조건을 선택해주세요.";
-      render();
-      return;
-    }
+    const recommendationMode = getRecommendationMode();
+    state.recommendationMode = recommendationMode;
 
     if (lifeZoneDataset.isDatasetAvailable === false) {
       state.scoredZones = [];
@@ -1049,6 +1125,7 @@ function bindPreferenceEvents() {
       };
       state.selectedZoneId = null;
       state.apiSelectionSummary = null;
+      state.recommendationMode = recommendationMode;
       state.validationMessage = "";
       state.view = "results";
       render();
@@ -1061,6 +1138,35 @@ function bindPreferenceEvents() {
 
     try {
       const baseScoredZones = calculateLifeZoneScores(lifeZoneDataset.lifeZones, state.preferences);
+
+      if (recommendationMode === RECOMMENDATION_MODES.infraOnly) {
+        const gradedZones = assignRelativeGrades(baseScoredZones);
+        const resultBundle = buildInfraOnlyResultBundle(gradedZones);
+
+        if (state.calculationRunId !== calculationRunId) return;
+
+        state.scoredZones = gradedZones;
+        state.resultBundle = resultBundle;
+        state.apiSelectionSummary = {
+          recommendationMode: RECOMMENDATION_MODES.infraOnly,
+          selectedCommuteMode: null,
+          preApiCandidateCount: gradedZones.length,
+          recommendationApiCandidateCount: 0,
+          notRecommendedApiCandidateIncluded: false,
+          finalApiTargetCount: 0
+        };
+        state.recommendationMode = RECOMMENDATION_MODES.infraOnly;
+        state.selectedZoneId = resultBundle.displayZones[0]?.id ?? null;
+        state.validationMessage = "";
+        state.view = "results";
+        return;
+      }
+
+      if (!selectedWorkplace) {
+        state.validationMessage = "직장 위치와 통근 조건을 선택해주세요.";
+        return;
+      }
+
       const normalizedCommutePreference = getNormalizedCommutePreference();
       const commutePreselection = buildCommuteApiPreselection({
         lifeZones: baseScoredZones,
@@ -1086,15 +1192,20 @@ function bindPreferenceEvents() {
         lowZoneId: commutePreselection.notRecommendedZoneId
       });
 
+      if (state.calculationRunId !== calculationRunId) return;
+
       state.scoredZones = gradedZones;
       state.resultBundle = resultBundle;
       state.apiSelectionSummary = commutePreselection.apiSelectionSummary;
+      state.recommendationMode = RECOMMENDATION_MODES.commuteBased;
       state.selectedZoneId = resultBundle.displayZones[0]?.id ?? null;
       state.validationMessage = "";
       state.view = "results";
     } finally {
-      state.isCalculating = false;
-      render();
+      if (state.calculationRunId === calculationRunId) {
+        state.isCalculating = false;
+        render();
+      }
     }
   });
 }
@@ -1143,6 +1254,27 @@ async function attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selected
   return baseScoredZones;
 }
 
+export function buildInfraOnlyResultBundle(scoredLifeZones = []) {
+  if (!Array.isArray(scoredLifeZones) || scoredLifeZones.length === 0) {
+    return {
+      recommendedZones: [],
+      lowZone: null,
+      displayZones: [],
+      recommendationMode: RECOMMENDATION_MODES.infraOnly,
+      emptyState: {
+        title: "추천할 생활권 데이터가 없습니다.",
+        message: "생활권 후보 데이터가 준비되면 인프라 선호도 기반 추천을 다시 확인할 수 있습니다."
+      }
+    };
+  }
+
+  return {
+    ...getTopAndLowZones(scoredLifeZones),
+    recommendationMode: RECOMMENDATION_MODES.infraOnly,
+    scoringBasis: "infrastructure-only"
+  };
+}
+
 function logCommuteApiSelectionSummary(summary) {
   if (!summary || typeof console === "undefined" || typeof console.info !== "function") return;
 
@@ -1155,6 +1287,13 @@ function logCommuteApiSelectionSummary(summary) {
   });
 }
 
+function invalidatePendingCalculation() {
+  state.calculationRunId += 1;
+  if (state.isCalculating) {
+    state.isCalculating = false;
+  }
+}
+
 function bindTargetMinuteInputs() {
   const rangeInput = appRoot.querySelector("[data-commute-target-range]");
   const displayElement = appRoot.querySelector("[data-commute-target-display]");
@@ -1165,6 +1304,7 @@ function bindTargetMinuteInputs() {
       ...state.commutePreference,
       targetMinutes
     };
+    invalidatePendingCalculation();
     state.validationMessage = "";
     if (rangeInput) rangeInput.value = String(targetMinutes);
     displayElement?.replaceChildren(`${targetMinutes}분`);
@@ -1183,7 +1323,7 @@ function initializeOptionalNaverMap() {
     return;
   }
 
-  const selectedWorkplace = getSelectedWorkplace();
+  const selectedWorkplace = state.recommendationMode === RECOMMENDATION_MODES.infraOnly ? null : getSelectedWorkplace();
   const displayZones = state.resultBundle?.displayZones ?? [];
   const focusSelectedLifeZone = state.shouldFocusSelectedZoneOnMap;
   state.shouldFocusSelectedZoneOnMap = false;
@@ -1262,6 +1402,7 @@ function bindCommuteOptionButtons() {
         ...state.commutePreference,
         commuteImportance: button.dataset.commuteImportance
       };
+      invalidatePendingCalculation();
       state.validationMessage = "";
       render();
     });
@@ -1280,6 +1421,7 @@ function bindCommuteOptionButtons() {
         commuteMode,
         targetMinutes
       };
+      invalidatePendingCalculation();
       state.validationMessage = "";
       render();
     });
@@ -1312,10 +1454,29 @@ function bindResultEvents() {
 }
 
 function getSelectedWorkplace() {
-  return findWorkplaceCenterByCode(
-    state.commutePreference.workplaceEmdCode || state.workplaceSelection.emdCode,
-    lifeZoneDataset.dataMode
-  );
+  const selectedCode = getSelectedWorkplaceCode();
+  if (isNoWorkplaceCode(selectedCode)) return null;
+
+  return findWorkplaceCenterByCode(selectedCode, lifeZoneDataset.dataMode);
+}
+
+function getSelectedWorkplaceCode() {
+  return normalizeWorkplaceEmdCode(state.commutePreference.workplaceEmdCode || state.workplaceSelection.emdCode);
+}
+
+export function normalizeWorkplaceEmdCode(value) {
+  const code = String(value ?? "").trim();
+  if (!code) return NO_WORKPLACE_ID;
+
+  return code === NO_WORKPLACE_ID || code === "NO_WORKPLACE" ? NO_WORKPLACE_ID : code;
+}
+
+function isNoWorkplaceCode(value) {
+  return normalizeWorkplaceEmdCode(value) === NO_WORKPLACE_ID;
+}
+
+function getRecommendationMode() {
+  return getSelectedWorkplace() ? RECOMMENDATION_MODES.commuteBased : RECOMMENDATION_MODES.infraOnly;
 }
 
 function getDefaultDistrict(city) {
@@ -1331,15 +1492,43 @@ function createWorkplaceSelection(workplace) {
 }
 
 function ensureValidWorkplaceSelection() {
-  const selectedCode = state.commutePreference.workplaceEmdCode || state.workplaceSelection.emdCode;
+  const selectedCode = getSelectedWorkplaceCode();
+
+  if (isNoWorkplaceCode(selectedCode)) {
+    state.workplaceSelection = {
+      ...createWorkplaceSelection(DEFAULT_WORKPLACE),
+      emdCode: NO_WORKPLACE_ID
+    };
+    state.commutePreference = {
+      ...state.commutePreference,
+      workplaceEmdCode: NO_WORKPLACE_ID
+    };
+    state.recommendationMode = RECOMMENDATION_MODES.infraOnly;
+    return;
+  }
+
   const selectedWorkplace = findWorkplaceCenterByCode(selectedCode, lifeZoneDataset.dataMode);
-  const fallbackWorkplace = selectedWorkplace ?? getDefaultWorkplaceOptionByDataMode(lifeZoneDataset.dataMode);
+  const fallbackWorkplace = selectedWorkplace ?? null;
+
+  if (!fallbackWorkplace) {
+    state.workplaceSelection = {
+      ...createWorkplaceSelection(DEFAULT_WORKPLACE),
+      emdCode: NO_WORKPLACE_ID
+    };
+    state.commutePreference = {
+      ...state.commutePreference,
+      workplaceEmdCode: NO_WORKPLACE_ID
+    };
+    state.recommendationMode = RECOMMENDATION_MODES.infraOnly;
+    return;
+  }
 
   state.workplaceSelection = createWorkplaceSelection(fallbackWorkplace);
   state.commutePreference = {
     ...state.commutePreference,
     workplaceEmdCode: fallbackWorkplace?.emdCode ?? ""
   };
+  state.recommendationMode = RECOMMENDATION_MODES.commuteBased;
 }
 
 function getDatasetDetailText() {
@@ -1503,4 +1692,25 @@ function formatLifeZoneDestinationName(zone = {}) {
 
 function formatMinutes(value) {
   return Number.isFinite(value) ? Math.max(1, Math.round(value)) : "-";
+}
+
+function formatScore(value) {
+  const score = Number(value);
+  if (!Number.isFinite(score)) return "-";
+
+  return Number.isInteger(score) ? String(score) : score.toFixed(1);
+}
+
+function getStrongestAxisLabel(zone = {}) {
+  const axisScores = zone.axisScores ?? {};
+  const axisLabels = {
+    transport: "교통 인프라",
+    living: "생활 편의 인프라",
+    safetyMedical: "안전 의료 인프라"
+  };
+  const strongestAxis = Object.entries(axisScores)
+    .filter(([, value]) => Number.isFinite(Number(value)))
+    .sort(([, scoreA], [, scoreB]) => Number(scoreB) - Number(scoreA))[0]?.[0];
+
+  return axisLabels[strongestAxis] ?? "인프라";
 }

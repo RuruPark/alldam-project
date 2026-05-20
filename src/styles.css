@@ -233,6 +233,11 @@ p {
   background: var(--navy);
 }
 
+.segment-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .form-grid,
 .commute-controls {
   display: grid;
@@ -242,6 +247,17 @@ p {
 
 .commute-controls {
   grid-template-columns: 1fr;
+}
+
+.infra-only-commute-notice {
+  padding: 10px 12px;
+  border: 1px solid #bfd8cf;
+  border-radius: 8px;
+  color: var(--teal-dark);
+  background: #eef8f3;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
 }
 
 .field-group {
@@ -833,6 +849,10 @@ p {
   background: #fffaf0;
 }
 
+.commute-readout.is-infra-only {
+  background: #eef8f3;
+}
+
 .preference-readout h2 {
   margin: 0;
   font-size: 13px;
@@ -991,6 +1011,27 @@ p {
   border: 1px solid #e5dac2;
   border-radius: 8px;
   background: #fffaf0;
+}
+
+.infra-only-summary-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #d9eadf;
+  border-radius: 8px;
+  color: var(--teal-dark);
+  background: #f3faf6;
+}
+
+.infra-only-summary-card strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.infra-only-summary-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .commute-summary-card p {

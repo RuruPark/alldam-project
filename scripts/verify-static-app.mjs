@@ -370,6 +370,16 @@ if (
   throw new Error("app.js must preselect commute API targets from proxy-scored candidates before external calls.");
 }
 
+if (
+  !appJs.includes("NO_WORKPLACE_ID") ||
+  !appJs.includes("RECOMMENDATION_MODES.infraOnly") ||
+  !appJs.includes("buildInfraOnlyResultBundle") ||
+  !appJs.includes("finalApiTargetCount: 0") ||
+  !appJs.includes("renderInfraOnlySummaryCard")
+) {
+  throw new Error("app.js must support workplace none as an infrastructure-only mode without commute API targets.");
+}
+
 if (!commutePreselection.includes("walk") || !commutePreselection.includes("low: 8")) {
   throw new Error("commutePreselection.js must limit walk TMAP calls to shortlist plus not-recommended candidates.");
 }
