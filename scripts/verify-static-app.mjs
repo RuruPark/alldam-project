@@ -184,6 +184,10 @@ if (
   !odsayTransitApi.includes("MISSING_ODSAY_URI_KEY") ||
   !odsayTransitApi.includes("ODSAY_AUTH_FAILED") ||
   !odsayTransitApi.includes("ODSAY_TOO_CLOSE") ||
+  !odsayTransitApi.includes("ODSAY_INVALID_COORDINATES") ||
+  !odsayTransitApi.includes("selectBestOdsayPathInfo") ||
+  !odsayTransitApi.includes("pathCount") ||
+  !odsayTransitApi.includes("isNotRecommendedCandidate") ||
   !odsayTransitApi.includes("durationMinutes: null") ||
   !odsayTransitApi.includes("isActualApiValue: false")
 ) {

@@ -145,6 +145,8 @@ test("API target list deduplicates not-recommended candidate when it overlaps th
   assert.equal(preselection.recommendationShortlist.length, 1);
   assert.equal(preselection.notRecommendedZoneId, "only-zone");
   assert.equal(preselection.apiTargetZones.length, 1);
+  assert.equal(preselection.apiTargetZones[0].isNotRecommendedCandidate, true);
+  assert.equal(preselection.apiTargetZones[0].apiSelectionRole, "notRecommended");
 });
 
 test("top recommendations are selected only from the API shortlist after reranking", () => {

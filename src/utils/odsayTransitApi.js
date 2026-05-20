@@ -12,7 +12,7 @@ export function getConfiguredOdsayUriApiKey(config = globalThis.window?.__APP_CO
 export function createFailedOdsayTransitResult({
   id = null,
   errorCode = "NETWORK_ERROR",
-  message = DEFAULT_FAILURE_MESSAGE,
+  message = null,
   diagnostics = null
 } = {}) {
   return {
@@ -31,7 +31,7 @@ export function createFailedOdsayTransitResult({
     firstStartStation: null,
     lastEndStation: null,
     mapObj: null,
-    message,
+    message: message ?? getOdsayFailureMessage(errorCode),
     diagnostics: sanitizeOdsayDiagnostics(diagnostics)
   };
 }
@@ -60,36 +60,55 @@ export function normalizeOdsayTransitApiResult({
   id = null,
   responseJson = null,
   statusCode = null,
-  hasOdsayUriApiKey = false
+  hasOdsayUriApiKey = false,
+  diagnostics = null
 } = {}) {
   const odsayError = getOdsayError(responseJson);
+  const baseDiagnostics = {
+    hasOdsayUriApiKey,
+    odsayStatusCode: statusCode,
+    ...diagnostics
+  };
 
   if (odsayError) {
     return createFailedOdsayTransitResult({
       id,
       errorCode: mapOdsayErrorCode(odsayError),
       diagnostics: {
-        hasOdsayUriApiKey,
-        odsayStatusCode: statusCode,
+        ...baseDiagnostics,
         odsayErrorCode: odsayError.code,
         odsayErrorMessage: odsayError.message
       }
     });
   }
 
-  const pathInfo = responseJson?.result?.path?.[0]?.info;
-  const durationMinutes = toFiniteNumber(pathInfo?.totalTime);
+  const pathSelection = selectBestOdsayPathInfo(responseJson);
 
-  if (!pathInfo || !Number.isFinite(durationMinutes)) {
+  if (!pathSelection.hasPathArray || pathSelection.pathCount === 0) {
+    return createFailedOdsayTransitResult({
+      id,
+      errorCode: "ODSAY_NO_ROUTE",
+      diagnostics: {
+        ...baseDiagnostics,
+        ...pathSelection.diagnostics
+      }
+    });
+  }
+
+  if (!pathSelection.pathInfo || !Number.isFinite(pathSelection.durationMinutes)) {
     return createFailedOdsayTransitResult({
       id,
       errorCode: "ODSAY_PARSE_FAILED",
       diagnostics: {
-        hasOdsayUriApiKey,
-        odsayStatusCode: statusCode
+        ...baseDiagnostics,
+        ...pathSelection.diagnostics
       }
     });
   }
+
+  const result = responseJson?.result ?? {};
+  const pathInfo = pathSelection.pathInfo;
+  const durationMinutes = pathSelection.durationMinutes;
 
   return {
     id,
@@ -98,20 +117,20 @@ export function normalizeOdsayTransitApiResult({
     errorCode: null,
     isActualApiValue: true,
     durationMinutes: Math.max(0, Math.round(durationMinutes)),
-    distanceMeters: normalizeNullableMeters(pathInfo.totalDistance),
+    distanceMeters: normalizeNullableMeters(pathInfo.totalDistance ?? result.pointDistance),
     trafficDistanceMeters: normalizeNullableMeters(pathInfo.trafficDistance),
     walkMeters: normalizeNullableMeters(pathInfo.totalWalk),
     fareKrw: normalizeNullableNumber(pathInfo.payment),
-    busTransitCount: normalizeNullableNumber(pathInfo.busTransitCount),
-    subwayTransitCount: normalizeNullableNumber(pathInfo.subwayTransitCount),
+    busTransitCount: normalizeNullableNumber(pathInfo.busTransitCount ?? result.busCount ?? 0),
+    subwayTransitCount: normalizeNullableNumber(pathInfo.subwayTransitCount ?? result.subwayCount ?? 0),
     firstStartStation: pathInfo.firstStartStation ? String(pathInfo.firstStartStation) : null,
     lastEndStation: pathInfo.lastEndStation ? String(pathInfo.lastEndStation) : null,
     mapObj: pathInfo.mapObj ? String(pathInfo.mapObj) : null,
     option: "recommended",
     message: null,
     diagnostics: sanitizeOdsayDiagnostics({
-      hasOdsayUriApiKey,
-      odsayStatusCode: statusCode
+      ...baseDiagnostics,
+      ...pathSelection.diagnostics
     })
   };
 }
@@ -155,12 +174,35 @@ export async function fetchOdsayTransitCommutes({
     return resultByZoneId;
   }
 
-  if (!isValidPoint(start) || typeof fetchImpl !== "function") {
+  if (!isValidPoint(start)) {
     lifeZones.forEach((zone) => {
+      const goal = normalizeLifeZonePoint(zone);
+      resultByZoneId.set(zone.id, createFailedOdsayTransitResult({
+        id: zone.id,
+        errorCode: "ODSAY_INVALID_COORDINATES",
+        diagnostics: createTransitDiagnostics({
+          zone,
+          hasOdsayUriApiKey: true,
+          hasValidStartCoordinates: false,
+          hasValidGoalCoordinates: isValidPoint(goal)
+        })
+      }));
+    });
+    return resultByZoneId;
+  }
+
+  if (typeof fetchImpl !== "function") {
+    lifeZones.forEach((zone) => {
+      const goal = normalizeLifeZonePoint(zone);
       resultByZoneId.set(zone.id, createFailedOdsayTransitResult({
         id: zone.id,
         errorCode: "NETWORK_ERROR",
-        diagnostics: { hasOdsayUriApiKey: true }
+        diagnostics: createTransitDiagnostics({
+          zone,
+          hasOdsayUriApiKey: true,
+          hasValidStartCoordinates: true,
+          hasValidGoalCoordinates: isValidPoint(goal)
+        })
       }));
     });
     return resultByZoneId;
@@ -172,8 +214,13 @@ export async function fetchOdsayTransitCommutes({
     if (!isValidPoint(goal)) {
       return [zone.id, createFailedOdsayTransitResult({
         id: zone.id,
-        errorCode: "ODSAY_PARSE_FAILED",
-        diagnostics: { hasOdsayUriApiKey: true }
+        errorCode: "ODSAY_INVALID_COORDINATES",
+        diagnostics: createTransitDiagnostics({
+          zone,
+          hasOdsayUriApiKey: true,
+          hasValidStartCoordinates: true,
+          hasValidGoalCoordinates: false
+        })
       })];
     }
 
@@ -185,12 +232,18 @@ export async function fetchOdsayTransitCommutes({
         goal,
         apiKey,
         endpoint,
-        fetchImpl
+        fetchImpl,
+        diagnostics: createTransitDiagnostics({
+          zone,
+          hasOdsayUriApiKey: true,
+          hasValidStartCoordinates: true,
+          hasValidGoalCoordinates: true
+        })
       });
 
     transitRequestCache.set(cacheKey, resultPromise);
     const result = await resultPromise;
-    return [zone.id, result?.id === zone.id ? result : { ...result, id: zone.id }];
+    return [zone.id, normalizeResultForZone(result, zone)];
   });
 
   const settledResults = await runWithConcurrency(tasks, Math.min(Math.max(1, concurrency), 4));
@@ -203,14 +256,19 @@ export function clearOdsayTransitRequestCache() {
   transitRequestCache.clear();
 }
 
-async function fetchSingleOdsayTransit({ id, start, goal, apiKey, endpoint, fetchImpl }) {
+async function fetchSingleOdsayTransit({ id, start, goal, apiKey, endpoint, fetchImpl, diagnostics = null }) {
   const requestUrl = buildOdsayTransitRequestUrl({ start, goal, apiKey, endpoint });
 
   if (!requestUrl) {
     return createFailedOdsayTransitResult({
       id,
-      errorCode: "MISSING_ODSAY_URI_KEY",
-      diagnostics: { hasOdsayUriApiKey: Boolean(apiKey) }
+      errorCode: apiKey ? "ODSAY_INVALID_COORDINATES" : "MISSING_ODSAY_URI_KEY",
+      diagnostics: {
+        ...diagnostics,
+        hasOdsayUriApiKey: Boolean(apiKey),
+        hasValidStartCoordinates: isValidPoint(start),
+        hasValidGoalCoordinates: isValidPoint(goal)
+      }
     });
   }
 
@@ -223,6 +281,7 @@ async function fetchSingleOdsayTransit({ id, start, goal, apiKey, endpoint, fetc
         id,
         errorCode: response.status === 429 ? "ODSAY_RATE_LIMITED" : "NETWORK_ERROR",
         diagnostics: {
+          ...diagnostics,
           hasOdsayUriApiKey: true,
           odsayStatusCode: response.status
         }
@@ -233,13 +292,17 @@ async function fetchSingleOdsayTransit({ id, start, goal, apiKey, endpoint, fetc
       id,
       responseJson,
       statusCode: response.status,
-      hasOdsayUriApiKey: true
+      hasOdsayUriApiKey: true,
+      diagnostics
     });
   } catch {
     return createFailedOdsayTransitResult({
       id,
       errorCode: "NETWORK_ERROR",
-      diagnostics: { hasOdsayUriApiKey: true }
+      diagnostics: {
+        ...diagnostics,
+        hasOdsayUriApiKey: true
+      }
     });
   }
 }
@@ -297,6 +360,112 @@ function normalizeTransitResultForTimes(result) {
       });
 }
 
+function selectBestOdsayPathInfo(responseJson = null) {
+  const result = responseJson?.result;
+  const pathArray = Array.isArray(result?.path) ? result.path : null;
+  const diagnostics = {
+    hasResult: Boolean(result),
+    hasPathArray: Array.isArray(pathArray),
+    pathCount: Array.isArray(pathArray) ? pathArray.length : 0,
+    hasSelectedPathInfo: false,
+    hasTotalTime: false,
+    infoKeys: []
+  };
+
+  if (!pathArray || pathArray.length === 0) {
+    return {
+      pathInfo: null,
+      durationMinutes: null,
+      hasPathArray: diagnostics.hasPathArray,
+      pathCount: diagnostics.pathCount,
+      diagnostics
+    };
+  }
+
+  const pathInfos = pathArray
+    .map((path) => path?.info)
+    .filter((info) => info && typeof info === "object");
+  const validPathInfos = pathInfos
+    .map((info) => ({
+      info,
+      durationMinutes: toFiniteNumber(info.totalTime)
+    }))
+    .filter((candidate) => Number.isFinite(candidate.durationMinutes))
+    .sort((a, b) => a.durationMinutes - b.durationMinutes);
+  const selectedPathInfo = validPathInfos[0]?.info ?? pathInfos[0] ?? null;
+
+  diagnostics.hasSelectedPathInfo = Boolean(selectedPathInfo);
+  diagnostics.hasTotalTime = Number.isFinite(toFiniteNumber(selectedPathInfo?.totalTime));
+  diagnostics.infoKeys = selectedPathInfo ? Object.keys(selectedPathInfo).slice(0, 20) : [];
+
+  return {
+    pathInfo: validPathInfos[0]?.info ?? null,
+    durationMinutes: validPathInfos[0]?.durationMinutes ?? null,
+    hasPathArray: diagnostics.hasPathArray,
+    pathCount: diagnostics.pathCount,
+    diagnostics
+  };
+}
+
+function normalizeResultForZone(result, zone) {
+  if (!result || typeof result !== "object") {
+    return createFailedOdsayTransitResult({
+      id: zone.id,
+      errorCode: "NETWORK_ERROR",
+      diagnostics: createTransitDiagnostics({ zone })
+    });
+  }
+
+  return {
+    ...result,
+    id: zone.id,
+    diagnostics: sanitizeOdsayDiagnostics({
+      ...result.diagnostics,
+      isNotRecommendedCandidate: isNotRecommendedCandidate(zone)
+    })
+  };
+}
+
+function createTransitDiagnostics({
+  zone = null,
+  hasOdsayUriApiKey = null,
+  hasValidStartCoordinates = null,
+  hasValidGoalCoordinates = null
+} = {}) {
+  return {
+    hasOdsayUriApiKey,
+    isNotRecommendedCandidate: isNotRecommendedCandidate(zone),
+    hasValidStartCoordinates,
+    hasValidGoalCoordinates
+  };
+}
+
+function isNotRecommendedCandidate(zone = null) {
+  return zone?.isNotRecommendedCandidate === true || zone?.apiSelectionRole === "notRecommended";
+}
+
+function getOdsayFailureMessage(errorCode) {
+  switch (errorCode) {
+    case "MISSING_ODSAY_URI_KEY":
+      return "Vercel 환경변수 PUBLIC_ODSAY_URI_API_KEY 등록과 재배포가 필요합니다.";
+    case "ODSAY_AUTH_FAILED":
+    case "ODSAY_PLATFORM_MISMATCH":
+      return "ODsay API 인증에 실패했습니다.";
+    case "ODSAY_NO_ROUTE":
+      return "ODsay 대중교통 경로를 찾지 못했습니다.";
+    case "ODSAY_TOO_CLOSE":
+      return "출발지와 도착지가 가까워 대중교통 경로가 제공되지 않았습니다.";
+    case "ODSAY_OUT_OF_SERVICE_AREA":
+      return "ODsay 대중교통 서비스 지역 밖입니다.";
+    case "ODSAY_PARSE_FAILED":
+      return "ODsay 응답을 해석하지 못했습니다.";
+    case "ODSAY_INVALID_COORDINATES":
+      return "대중교통 경로 좌표를 확인하지 못했습니다.";
+    default:
+      return DEFAULT_FAILURE_MESSAGE;
+  }
+}
+
 function getOdsayError(responseJson) {
   const error = Array.isArray(responseJson?.error) ? responseJson.error[0] : responseJson?.error;
   if (!error) return null;
@@ -332,6 +501,21 @@ function sanitizeOdsayDiagnostics(diagnostics = null) {
 
   return {
     hasOdsayUriApiKey: Boolean(diagnostics.hasOdsayUriApiKey),
+    isNotRecommendedCandidate: diagnostics.isNotRecommendedCandidate === true,
+    hasResult: typeof diagnostics.hasResult === "boolean" ? diagnostics.hasResult : null,
+    hasPathArray: typeof diagnostics.hasPathArray === "boolean" ? diagnostics.hasPathArray : null,
+    pathCount: Number.isFinite(Number(diagnostics.pathCount)) ? Number(diagnostics.pathCount) : null,
+    hasSelectedPathInfo: typeof diagnostics.hasSelectedPathInfo === "boolean" ? diagnostics.hasSelectedPathInfo : null,
+    hasTotalTime: typeof diagnostics.hasTotalTime === "boolean" ? diagnostics.hasTotalTime : null,
+    infoKeys: Array.isArray(diagnostics.infoKeys)
+      ? diagnostics.infoKeys.map((key) => String(key).slice(0, 60)).slice(0, 20)
+      : [],
+    hasValidStartCoordinates: typeof diagnostics.hasValidStartCoordinates === "boolean"
+      ? diagnostics.hasValidStartCoordinates
+      : null,
+    hasValidGoalCoordinates: typeof diagnostics.hasValidGoalCoordinates === "boolean"
+      ? diagnostics.hasValidGoalCoordinates
+      : null,
     odsayStatusCode: Number.isFinite(Number(diagnostics.odsayStatusCode))
       ? Number(diagnostics.odsayStatusCode)
       : null,

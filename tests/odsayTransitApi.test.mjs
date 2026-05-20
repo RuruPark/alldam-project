@@ -72,6 +72,55 @@ test("normalizeOdsayTransitApiResult parses a successful public transit response
   assert.equal(result.mapObj, "fixture-map");
 });
 
+test("normalizeOdsayTransitApiResult selects the shortest path with totalTime", () => {
+  const result = normalizeOdsayTransitApiResult({
+    id: "LZ_LOW",
+    statusCode: 200,
+    hasOdsayUriApiKey: true,
+    diagnostics: { isNotRecommendedCandidate: true },
+    responseJson: {
+      result: {
+        pointDistance: 16010,
+        busCount: 2,
+        subwayCount: 1,
+        path: [
+          {
+            info: {
+              totalDistance: 9999
+            }
+          },
+          {
+            info: {
+              totalTime: 52,
+              totalWalk: 900
+            }
+          },
+          {
+            info: {
+              totalTime: 41,
+              trafficDistance: 12000,
+              payment: 1500
+            }
+          }
+        ]
+      }
+    }
+  });
+
+  assert.equal(result.apiStatus, "success");
+  assert.equal(result.isActualApiValue, true);
+  assert.equal(result.durationMinutes, 41);
+  assert.equal(result.distanceMeters, 16010);
+  assert.equal(result.trafficDistanceMeters, 12000);
+  assert.equal(result.walkMeters, null);
+  assert.equal(result.fareKrw, 1500);
+  assert.equal(result.busTransitCount, 2);
+  assert.equal(result.subwayTransitCount, 1);
+  assert.equal(result.diagnostics.isNotRecommendedCandidate, true);
+  assert.equal(result.diagnostics.pathCount, 3);
+  assert.equal(result.diagnostics.hasTotalTime, true);
+});
+
 test("normalizeOdsayTransitApiResult maps ODsay error arrays to errorCode", () => {
   const cases = [
     ["-98", "too close", "ODSAY_TOO_CLOSE"],
@@ -96,6 +145,53 @@ test("normalizeOdsayTransitApiResult maps ODsay error arrays to errorCode", () =
     assert.equal(result.durationMinutes, null);
     assert.equal(result.distanceMeters, null);
   });
+});
+
+test("normalizeOdsayTransitApiResult treats missing paths as no route", () => {
+  const result = normalizeOdsayTransitApiResult({
+    id: "LZ_TEST",
+    statusCode: 200,
+    hasOdsayUriApiKey: true,
+    responseJson: {
+      result: {
+        searchType: 0
+      }
+    }
+  });
+
+  assert.equal(result.apiStatus, "failed");
+  assert.equal(result.errorCode, "ODSAY_NO_ROUTE");
+  assert.equal(result.durationMinutes, null);
+  assert.equal(result.diagnostics.hasResult, true);
+  assert.equal(result.diagnostics.hasPathArray, false);
+  assert.equal(result.diagnostics.pathCount, 0);
+});
+
+test("normalizeOdsayTransitApiResult returns parse diagnostics when paths have no totalTime", () => {
+  const result = normalizeOdsayTransitApiResult({
+    id: "LZ_TEST",
+    statusCode: 200,
+    hasOdsayUriApiKey: true,
+    responseJson: {
+      result: {
+        path: [{
+          info: {
+            totalDistance: 16010,
+            payment: 1500
+          }
+        }]
+      }
+    }
+  });
+
+  assert.equal(result.apiStatus, "failed");
+  assert.equal(result.errorCode, "ODSAY_PARSE_FAILED");
+  assert.equal(result.durationMinutes, null);
+  assert.equal(result.distanceMeters, null);
+  assert.equal(result.diagnostics.pathCount, 1);
+  assert.deepEqual(result.diagnostics.infoKeys, ["totalDistance", "payment"]);
+  assert.equal(result.diagnostics.hasSelectedPathInfo, true);
+  assert.equal(result.diagnostics.hasTotalTime, false);
 });
 
 test("fetchOdsayTransitCommutes returns missing-key failures without calling fetch", async () => {
@@ -157,6 +253,79 @@ test("fetchOdsayTransitCommutes normalizes success and does not expose the key i
   assert.equal(result.isActualApiValue, true);
   assert.equal(result.durationMinutes, 31);
   assert.equal(JSON.stringify(result).includes(apiKey), false);
+});
+
+test("fetchOdsayTransitCommutes keeps not-recommended candidate ids and diagnostics", async () => {
+  clearOdsayTransitRequestCache();
+  const apiKey = "fixture+secret/key=";
+  let fetchCount = 0;
+
+  const resultByZoneId = await fetchOdsayTransitCommutes({
+    start,
+    apiKey,
+    lifeZones: [{
+      id: "LZ_LOW",
+      centerLat: goal.lat,
+      centerLng: goal.lng,
+      isNotRecommendedCandidate: true
+    }],
+    fetchImpl: async () => {
+      fetchCount += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          result: {
+            path: [{
+              info: {
+                totalTime: 44,
+                totalDistance: 12000
+              }
+            }]
+          }
+        })
+      };
+    }
+  });
+
+  const result = resultByZoneId.get("LZ_LOW");
+  assert.equal(fetchCount, 1);
+  assert.equal(result.id, "LZ_LOW");
+  assert.equal(result.apiStatus, "success");
+  assert.equal(result.durationMinutes, 44);
+  assert.equal(result.diagnostics.isNotRecommendedCandidate, true);
+  assert.equal(result.diagnostics.hasValidStartCoordinates, true);
+  assert.equal(result.diagnostics.hasValidGoalCoordinates, true);
+});
+
+test("fetchOdsayTransitCommutes rejects invalid goal coordinates without calling ODsay", async () => {
+  clearOdsayTransitRequestCache();
+  let fetchCount = 0;
+
+  const resultByZoneId = await fetchOdsayTransitCommutes({
+    start,
+    apiKey: "fixture-key",
+    lifeZones: [{
+      id: "LZ_BAD",
+      centerLat: undefined,
+      centerLng: Number.NaN,
+      isNotRecommendedCandidate: true
+    }],
+    fetchImpl: async () => {
+      fetchCount += 1;
+      throw new Error("must not call ODsay for invalid coordinates");
+    }
+  });
+
+  const result = resultByZoneId.get("LZ_BAD");
+  assert.equal(fetchCount, 0);
+  assert.equal(result.apiStatus, "failed");
+  assert.equal(result.errorCode, "ODSAY_INVALID_COORDINATES");
+  assert.equal(result.durationMinutes, null);
+  assert.equal(result.distanceMeters, null);
+  assert.equal(result.isActualApiValue, false);
+  assert.equal(result.diagnostics.isNotRecommendedCandidate, true);
+  assert.equal(result.diagnostics.hasValidGoalCoordinates, false);
 });
 
 test("applyTransitCommuteResultToTimes keeps failed ODsay results as null duration", () => {

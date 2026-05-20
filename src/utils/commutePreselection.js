@@ -242,10 +242,16 @@ function buildApiTargetZones({
   const mode = normalizeCommuteApiMode(commuteMode);
   if (mode === "walk") return [];
 
+  const notRecommendedZoneId = notRecommendedZone?.id ?? null;
   const targets = [];
   addUniqueZones(targets, recommendationShortlist);
   if (notRecommendedZone) addUniqueZones(targets, [notRecommendedZone]);
-  return targets;
+
+  return targets.map((zone) => ({
+    ...zone,
+    isNotRecommendedCandidate: zone.id === notRecommendedZoneId,
+    apiSelectionRole: zone.id === notRecommendedZoneId ? "notRecommended" : "recommendationShortlist"
+  }));
 }
 
 function getShortlistComposition(targetCount) {
