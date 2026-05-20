@@ -589,20 +589,8 @@ function getSelectedCommuteSummary(commute) {
 
   return {
     title: `${commute.commuteModeLabel} 약 ${formatMinutes(commute.actualMinutes)}분`,
-    meta: `${getSelectedCommuteMeta(commute)} · ${getSelectedCommuteSourceLabel(commute)}`
+    meta: `${commute.feasibilityLabel ?? commute.statusLabel} · 희망 ${commute.targetMinutes}분 · ${getSelectedCommuteSourceLabel(commute)}`
   };
-}
-
-function getSelectedCommuteMeta(commute) {
-  if (
-    Number.isFinite(Number(commute.commuteTimeExcessPenalty)) &&
-    Number(commute.commuteTimeExcessPenalty) > 0 &&
-    Number.isFinite(Number(commute.commuteTimeExcessMinutes))
-  ) {
-    return `희망 시간보다 ${commute.commuteTimeExcessMinutes}분 초과 · 통근 조건 감점 적용`;
-  }
-
-  return `${commute.feasibilityLabel ?? commute.statusLabel} · 희망 ${commute.targetMinutes}분`;
 }
 
 function getSelectedCommuteSourceLabel(commute) {

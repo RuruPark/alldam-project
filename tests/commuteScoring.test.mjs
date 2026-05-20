@@ -4,9 +4,7 @@ import {
   applyCommuteToLifeZoneScores,
   buildCommuteSummary,
   calculateCommuteFitScore,
-  calculateCommuteTimeExcessPenalty,
   calculateFinalScoreWithCommute,
-  COMMUTE_OVERRUN_NO_RESULT_MINUTES,
   getTopAndLowZonesWithCommuteFeasibility,
   getCommuteWeightConfig,
   selectActualCommuteMinutes
@@ -76,46 +74,6 @@ test("calculateFinalScoreWithCommute applies low, medium, and high commute weigh
     commuteFitScore: 40,
     commuteImportance: "높음"
   }), 68);
-});
-
-test("commute overrun penalty applies only for medium and high importance", () => {
-  const low = calculateCommuteTimeExcessPenalty({
-    targetMinutes: 40,
-    actualMinutes: 70,
-    commuteImportance: "low",
-    commuteMode: "car"
-  });
-  const medium = calculateCommuteTimeExcessPenalty({
-    targetMinutes: 40,
-    actualMinutes: 60,
-    commuteImportance: "medium",
-    commuteMode: "car"
-  });
-  const high = calculateCommuteTimeExcessPenalty({
-    targetMinutes: 40,
-    actualMinutes: 60,
-    commuteImportance: "high",
-    commuteMode: "car"
-  });
-
-  assert.equal(COMMUTE_OVERRUN_NO_RESULT_MINUTES, 30);
-  assert.equal(low.commuteTimeExcessPenalty, 0);
-  assert.equal(medium.commuteTimeExcessPenalty, 12);
-  assert.equal(high.commuteTimeExcessPenalty, 22);
-  assert.ok(high.commuteTimeExcessPenalty > medium.commuteTimeExcessPenalty);
-});
-
-test("commute overrun penalty does not add a strong penalty within 15 minutes", () => {
-  const result = calculateCommuteTimeExcessPenalty({
-    targetMinutes: 40,
-    actualMinutes: 55,
-    commuteImportance: "high",
-    commuteMode: "transit"
-  });
-
-  assert.equal(result.commuteTimeExcessMinutes, 15);
-  assert.equal(result.commuteTimeExcessPenalty, 0);
-  assert.equal(result.isCommuteTimeSuitable, true);
 });
 
 test("commute weight does not exceed 0.30", () => {
@@ -296,96 +254,6 @@ test("transit reranking prefers actual ODsay success candidates over failed high
   assert.equal(result.lowZone.id, "failed-low");
 });
 
-test("medium commute overrun penalty can move a desired-time candidate above a high-score overrun candidate", () => {
-  const workplace = { lat: 36.815, lng: 127.108 };
-  const zones = [
-    createDrivingZone("overrun-70", 100, 70),
-    createDrivingZone("reasonable-45", 90, 45),
-    createDrivingZone("low-zone", 10, 80)
-  ];
-  const commuteScoredZones = applyCommuteToLifeZoneScores(zones, workplace, {
-    commuteMode: "car",
-    targetMinutes: 40,
-    commuteImportance: "medium"
-  });
-  const result = getTopAndLowZonesWithCommuteFeasibility(commuteScoredZones, {
-    recommendedCandidateIds: ["overrun-70", "reasonable-45"],
-    lowZoneId: "low-zone"
-  });
-
-  assert.equal(
-    commuteScoredZones.find((zone) => zone.id === "overrun-70").commute.commuteTimeExcessPenalty,
-    25
-  );
-  assert.equal(result.recommendedZones[0].id, "reasonable-45");
-});
-
-test("all desired-plus-30 car candidates show no-result for medium importance", () => {
-  const workplace = { lat: 36.815, lng: 127.108 };
-  const zones = [
-    createDrivingZone("car-70", 100, 70),
-    createDrivingZone("car-75", 90, 75),
-    createDrivingZone("car-80", 10, 80)
-  ];
-  const commuteScoredZones = applyCommuteToLifeZoneScores(zones, workplace, {
-    commuteMode: "car",
-    targetMinutes: 40,
-    commuteImportance: "medium"
-  });
-  const result = getTopAndLowZonesWithCommuteFeasibility(commuteScoredZones, {
-    recommendedCandidateIds: ["car-70", "car-75"],
-    lowZoneId: "car-80"
-  });
-
-  assert.deepEqual(result.recommendedZones, []);
-  assert.equal(result.lowZone, null);
-  assert.match(result.emptyState.title, /자동차로 통근하기에 적합한 생활권이 없습니다/);
-  assert.equal(result.commuteFeasibilitySummary.commuteTimeNoResultReason, "overDesiredPlus30");
-});
-
-test("all desired-plus-30 transit candidates show no-result for high importance", () => {
-  const workplace = { lat: 36.815, lng: 127.108 };
-  const zones = [
-    createTransitZone("transit-70", 100, 70),
-    createTransitZone("transit-75", 90, 75),
-    createTransitZone("transit-low", 10, 82)
-  ];
-  const commuteScoredZones = applyCommuteToLifeZoneScores(zones, workplace, {
-    commuteMode: "transit",
-    targetMinutes: 40,
-    commuteImportance: "high"
-  });
-  const result = getTopAndLowZonesWithCommuteFeasibility(commuteScoredZones, {
-    recommendedCandidateIds: ["transit-70", "transit-75"],
-    lowZoneId: "transit-low"
-  });
-
-  assert.deepEqual(result.displayZones, []);
-  assert.match(result.emptyState.title, /대중교통으로 통근하기에 적합한 생활권이 없습니다/);
-});
-
-test("desired-plus-30 no-result is not applied for low commute importance", () => {
-  const workplace = { lat: 36.815, lng: 127.108 };
-  const zones = [
-    createDrivingZone("car-70", 100, 70),
-    createDrivingZone("car-75", 90, 75),
-    createDrivingZone("car-low", 10, 80)
-  ];
-  const commuteScoredZones = applyCommuteToLifeZoneScores(zones, workplace, {
-    commuteMode: "car",
-    targetMinutes: 40,
-    commuteImportance: "low"
-  });
-  const result = getTopAndLowZonesWithCommuteFeasibility(commuteScoredZones, {
-    recommendedCandidateIds: ["car-70", "car-75"],
-    lowZoneId: "car-low"
-  });
-
-  assert.equal(result.recommendedZones.length, 2);
-  assert.equal(result.emptyState, undefined);
-  assert.equal(commuteScoredZones.every((zone) => zone.commute.commuteTimeExcessPenalty === 0), true);
-});
-
 test("buildCommuteSummary uses TMAP walking success for walk scoring", () => {
   const commute = buildCommuteSummary(
     { lat: 36.815, lng: 127.108 },
@@ -492,29 +360,6 @@ test("walk mode shows no top recommendation when all TMAP successes exceed 60 mi
   assert.deepEqual(result.displayZones, []);
   assert.match(result.emptyState.title, /도보로 통근하기에 적합한 생활권이 없습니다/);
   assert.equal(result.walkRecommendationSummary.noResultReason, "overHardCap");
-});
-
-test("walk mode uses desired-plus-30 no-result before the 60 minute hard cap when applicable", () => {
-  const workplace = { lat: 36.815, lng: 127.108 };
-  const zones = [
-    createWalkingZone("walk-55", 100, 55),
-    createWalkingZone("walk-56", 90, 56),
-    createWalkingZone("walk-low", 10, 58)
-  ];
-  const commuteScoredZones = applyCommuteToLifeZoneScores(zones, workplace, {
-    commuteMode: "walk",
-    targetMinutes: 20,
-    commuteImportance: "high"
-  });
-  const result = getTopAndLowZonesWithCommuteFeasibility(commuteScoredZones, {
-    recommendedCandidateIds: ["walk-55", "walk-56"],
-    lowZoneId: "walk-low"
-  });
-
-  assert.deepEqual(result.displayZones, []);
-  assert.match(result.emptyState.title, /도보로 통근하기에 적합한 생활권이 없습니다/);
-  assert.equal(result.commuteFeasibilitySummary.commuteTimeNoResultReason, "overDesiredPlus30");
-  assert.equal(result.walkRecommendationSummary, undefined);
 });
 
 test("walk mode shows only one top recommendation when one TMAP success is within 60 minutes", () => {
@@ -627,24 +472,6 @@ function createTransitZone(id, totalScore, durationMinutes) {
     transitCommute: {
       id,
       provider: "odsay-public-transit",
-      apiStatus: "success",
-      isActualApiValue: true,
-      durationMinutes,
-      distanceMeters: 10000
-    }
-  };
-}
-
-function createDrivingZone(id, totalScore, durationMinutes) {
-  return {
-    id,
-    centerLat: 36.75 + durationMinutes * 0.0001,
-    centerLng: 127.05 + durationMinutes * 0.0001,
-    totalScore,
-    rank: 1,
-    drivingCommute: {
-      id,
-      provider: "naver-directions5",
       apiStatus: "success",
       isActualApiValue: true,
       durationMinutes,
