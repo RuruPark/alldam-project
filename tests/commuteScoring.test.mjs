@@ -196,6 +196,66 @@ test("buildCommuteSummary does not apply transit scoring without an ODsay result
   assert.equal(commute.fitScore, null);
 });
 
+test("buildCommuteSummary uses TMAP walking success for walk scoring", () => {
+  const commute = buildCommuteSummary(
+    { lat: 36.815, lng: 127.108 },
+    {
+      id: "LZ_TEST",
+      centerLat: 36.773,
+      centerLng: 127.059,
+      walkingCommute: {
+        id: "LZ_TEST",
+        provider: "tmap-pedestrian",
+        apiStatus: "success",
+        isActualApiValue: true,
+        durationMinutes: 28,
+        distanceMeters: 2100
+      }
+    },
+    {
+      commuteMode: "walk",
+      targetMinutes: 40,
+      commuteImportance: "medium"
+    }
+  );
+
+  assert.equal(commute.actualMinutes, 28);
+  assert.equal(commute.isWalkingActualApiValue, true);
+  assert.equal(commute.isCommuteScoreApplied, true);
+  assert.equal(typeof commute.fitScore, "number");
+});
+
+test("buildCommuteSummary does not use fallback walk minutes after TMAP failure", () => {
+  const commute = buildCommuteSummary(
+    { lat: 36.815, lng: 127.108 },
+    {
+      id: "LZ_TEST",
+      centerLat: 36.773,
+      centerLng: 127.059,
+      walkingCommute: {
+        id: "LZ_TEST",
+        provider: "tmap-pedestrian",
+        apiStatus: "failed",
+        errorCode: "TMAP_WALK_NO_ROUTE",
+        isActualApiValue: false,
+        durationMinutes: null,
+        distanceMeters: null
+      }
+    },
+    {
+      commuteMode: "walk",
+      targetMinutes: 40,
+      commuteImportance: "medium"
+    }
+  );
+
+  assert.equal(commute.actualMinutes, null);
+  assert.equal(commute.commuteTimes.walk, null);
+  assert.equal(commute.isWalkingActualApiValue, false);
+  assert.equal(commute.isCommuteScoreApplied, false);
+  assert.equal(commute.fitScore, null);
+});
+
 test("applyCommuteScoringToLifeZones adds commute scoring fields and sorts by final score", () => {
   const workplace = {
     emdCode: "WORK",

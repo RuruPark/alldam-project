@@ -20,6 +20,38 @@ function makeZone(id, finalScoreWithCommute, feasibilityStatus, rank = 1) {
   };
 }
 
+function makeApiZone(id, finalScoreWithCommute, isCommuteScoreApplied) {
+  return {
+    id,
+    name: id,
+    rank: 1,
+    totalScore: finalScoreWithCommute,
+    finalScoreWithCommute,
+    commute: {
+      commuteMode: "walk",
+      feasibilityStatus: "unrealistic",
+      actualMinutes: null,
+      isCommuteScoreApplied
+    }
+  };
+}
+
+test("walk API failures use displayed candidates when deciding commute failure notice", () => {
+  const result = getTopAndLowZonesWithCommuteFeasibility([
+    makeApiZone("api-a", 90, false),
+    makeApiZone("api-b", 80, false),
+    makeApiZone("api-low", 5, false),
+    makeApiZone("outside-with-fallback", 99, true)
+  ], {
+    recommendedCandidateIds: ["api-a", "api-b"],
+    lowZoneId: "api-low"
+  });
+
+  assert.deepEqual(result.recommendedZones.map((zone) => zone.id), ["api-a", "api-b"]);
+  assert.equal(result.lowZone.id, "api-low");
+  assert.match(result.commuteFeasibilityNotice, /도보 경로/);
+});
+
 test("walk commute feasibility uses a strong tolerance around the target", () => {
   assert.equal(getCommuteToleranceMinutes(40, "도보"), 10);
   assert.equal(getCommuteFeasibilityStatus({ targetMinutes: 40, actualMinutes: 40, transportMode: "도보" }), "withinTarget");

@@ -207,7 +207,7 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = [], op
   const selectedCandidates = [];
   const isCarMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "car");
   const isTransitMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "transit");
-  const hasAppliedCommuteScore = scoredLifeZones.some((zone) => zone.commute?.isCommuteScoreApplied === true);
+  const isWalkMode = scoredLifeZones.some((zone) => zone.commute?.commuteMode === "walk");
 
   addUniqueZones(selectedCandidates, preferredRecommendationCandidates);
   addUniqueZones(selectedCandidates, farRecommendationCandidates, 2);
@@ -239,12 +239,14 @@ export function getTopAndLowZonesWithCommuteFeasibility(scoredLifeZones = [], op
       }
     : null;
   const displayZones = lowZone ? [...recommendedZones, lowZone] : [...recommendedZones];
+  const noticeZones = displayZones.length > 0 ? displayZones : scoredLifeZones;
+  const hasAppliedCommuteScore = noticeZones.some((zone) => zone.commute?.isCommuteScoreApplied === true);
 
   return {
     recommendedZones,
     lowZone,
     displayZones,
-    commuteFeasibilityNotice: createCommuteNotice({ usedScoreFallback, isCarMode, isTransitMode, hasAppliedCommuteScore }),
+    commuteFeasibilityNotice: createCommuteNotice({ usedScoreFallback, isCarMode, isTransitMode, isWalkMode, hasAppliedCommuteScore }),
     commuteFeasibilitySummary: createCommuteFeasibilitySummary(scoredLifeZones, { usedScoreFallback })
   };
 }
@@ -260,14 +262,23 @@ export function buildCommuteSummary(workplace, lifeZone, commutePreference = {})
   });
   const isCarMode = modeKey === "car";
   const isTransitMode = modeKey === "transit";
+  const isWalkMode = modeKey === "walk";
   const isDrivingActualApiValue = commuteTimes.driving?.isActualApiValue === true;
   const isTransitActualApiValue = commuteTimes.transitApi?.isActualApiValue === true;
-  const actualMinutes = isTransitMode && !isTransitActualApiValue ? null : selectedActualMinutes;
+  const hasWalkingApiResult = Boolean(commuteTimes.walking);
+  const isWalkingActualApiValue = commuteTimes.walking?.isActualApiValue === true;
+  const actualMinutes = isTransitMode && !isTransitActualApiValue
+    ? null
+    : isWalkMode && hasWalkingApiResult && !isWalkingActualApiValue
+      ? null
+      : selectedActualMinutes;
   const isCommuteScoreApplied = isCarMode
     ? isDrivingActualApiValue
     : isTransitMode
       ? isTransitActualApiValue
-      : true;
+      : isWalkMode && hasWalkingApiResult
+        ? isWalkingActualApiValue
+        : true;
   const fitScore = isCommuteScoreApplied
     ? calculateCommuteFitScore({
         actualMinutes,
@@ -308,7 +319,12 @@ export function buildCommuteSummary(workplace, lifeZone, commutePreference = {})
     transitMessage: commuteTimes.transitApi?.message ?? null,
     transitFareKrw: commuteTimes.transitApi?.fareKrw ?? null,
     transitBusCount: commuteTimes.transitApi?.busTransitCount ?? null,
-    transitSubwayCount: commuteTimes.transitApi?.subwayTransitCount ?? null
+    transitSubwayCount: commuteTimes.transitApi?.subwayTransitCount ?? null,
+    isWalkingActualApiValue,
+    walkingApiStatus: commuteTimes.walking?.apiStatus ?? "unavailable",
+    walkingErrorCode: commuteTimes.walking?.errorCode ?? null,
+    walkingDiagnostics: commuteTimes.walking?.diagnostics ?? null,
+    walkingMessage: commuteTimes.walking?.message ?? null
   };
 }
 
@@ -416,13 +432,17 @@ function isPreferredCommuteStatus(status) {
   return status === "withinTarget" || status === "acceptable";
 }
 
-function createCommuteNotice({ usedScoreFallback, isCarMode, isTransitMode, hasAppliedCommuteScore }) {
+function createCommuteNotice({ usedScoreFallback, isCarMode, isTransitMode, isWalkMode, hasAppliedCommuteScore }) {
   if (isCarMode && !hasAppliedCommuteScore) {
     return "자동차 길찾기 정보를 불러오지 못해 통근 조건은 반영하지 않았습니다.";
   }
 
   if (isTransitMode && !hasAppliedCommuteScore) {
     return "대중교통 경로 정보를 불러오지 못해 통근 조건은 반영하지 않았습니다.";
+  }
+
+  if (isWalkMode && !hasAppliedCommuteScore) {
+    return "도보 경로 정보를 불러오지 못해 통근 조건은 반영하지 않았습니다.";
   }
 
   return usedScoreFallback

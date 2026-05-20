@@ -4,6 +4,7 @@ import {
   createUnavailableDrivingCommuteResult
 } from "./drivingCommuteApi.js";
 import { applyTransitCommuteResultToTimes } from "./odsayTransitApi.js";
+import { applyWalkingCommuteResultToTimes } from "./walkingCommuteApi.js";
 
 const CAR_DISTANCE_FACTOR = 1.35;
 const TRANSIT_DISTANCE_FACTOR = 1.45;
@@ -36,6 +37,10 @@ export function estimateCommuteTimes(workplace, lifeZone, options = {}) {
     lifeZone?.transitCommute ??
     lifeZone?.commuteTimes?.transitApi ??
     null;
+  const walkingResult = options.walkingCommuteResult ??
+    lifeZone?.walkingCommute ??
+    lifeZone?.commuteTimes?.walking ??
+    null;
 
   const fallbackTimes = applyDrivingCommuteResultToTimes({
     car: null,
@@ -46,7 +51,10 @@ export function estimateCommuteTimes(workplace, lifeZone, options = {}) {
     provider: "distance-fallback"
   }, drivingResult);
 
-  return applyTransitCommuteResultToTimes(fallbackTimes, transitResult);
+  return applyWalkingCommuteResultToTimes(
+    applyTransitCommuteResultToTimes(fallbackTimes, transitResult),
+    walkingResult
+  );
 }
 
 function normalizeLifeZoneCenter(lifeZone) {

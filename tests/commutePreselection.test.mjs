@@ -84,7 +84,7 @@ test("transit mode limits API targets to wider shortlist plus one not-recommende
   assert.equal(new Set(preselection.apiTargetZoneIds).size, preselection.apiTargetZoneIds.length);
 });
 
-test("walk mode keeps external API target count at zero", () => {
+test("walk mode limits TMAP API targets to shortlist plus one not-recommended candidate", () => {
   const dataset = getLifeZoneDataset({ dataMode: "generated" });
   const selectedWorkplace = getDefaultWorkplaceOptionByDataMode("generated");
   const scoredZones = calculateLifeZoneScores(dataset.lifeZones, defaultPreference);
@@ -99,9 +99,10 @@ test("walk mode keeps external API target count at zero", () => {
   });
 
   assert.equal(preselection.preApiZones.length, 48);
-  assert.equal(preselection.recommendationShortlist.length, 0);
-  assert.equal(preselection.apiTargetZones.length, 0);
-  assert.equal(preselection.apiSelectionSummary.finalApiTargetCount, 0);
+  assert.equal(preselection.recommendationShortlist.length, 10);
+  assert.ok(preselection.apiTargetZones.length <= 11);
+  assert.equal(new Set(preselection.apiTargetZoneIds).size, preselection.apiTargetZoneIds.length);
+  assert.equal(preselection.apiSelectionSummary.finalApiTargetCount, preselection.apiTargetZones.length);
 });
 
 test("not-recommended candidate is selected from the full preApi pool", () => {

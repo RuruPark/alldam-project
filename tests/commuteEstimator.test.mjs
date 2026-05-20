@@ -88,3 +88,40 @@ test("estimateCommuteTimes keeps failed ODsay transit values unavailable instead
   assert.equal(result.transitApi.errorCode, "ODSAY_NO_ROUTE");
   assert.equal(result.transitIsActualApiValue, false);
 });
+
+test("estimateCommuteTimes applies TMAP walking success values when present", () => {
+  const result = estimateCommuteTimes(workplace, {
+    ...lifeZone,
+    walkingCommute: {
+      id: "LZ_TEST",
+      provider: "tmap-pedestrian",
+      apiStatus: "success",
+      isActualApiValue: true,
+      durationMinutes: 28,
+      distanceMeters: 2100
+    }
+  });
+
+  assert.equal(result.walk, 28);
+  assert.equal(result.walking.provider, "tmap-pedestrian");
+  assert.equal(result.walkIsActualApiValue, true);
+});
+
+test("estimateCommuteTimes keeps failed TMAP walking values unavailable instead of fallback minutes", () => {
+  const result = estimateCommuteTimes(workplace, {
+    ...lifeZone,
+    walkingCommute: {
+      id: "LZ_TEST",
+      provider: "tmap-pedestrian",
+      apiStatus: "failed",
+      errorCode: "TMAP_WALK_NO_ROUTE",
+      isActualApiValue: false,
+      durationMinutes: null,
+      distanceMeters: null
+    }
+  });
+
+  assert.equal(result.walk, null);
+  assert.equal(result.walking.errorCode, "TMAP_WALK_NO_ROUTE");
+  assert.equal(result.walkIsActualApiValue, false);
+});

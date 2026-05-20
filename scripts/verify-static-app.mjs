@@ -16,6 +16,7 @@ const requiredFiles = [
   "api/commute/_driving-core.js",
   "api/commute/driving.js",
   "api/commute/driving-batch.js",
+  "api/commute/walking-batch.js",
   "scripts/build-vercel-static.mjs",
   "scripts/prepare-admin-boundaries.mjs",
   "scripts/prepare-vworld-boundaries.mjs",
@@ -36,6 +37,7 @@ const requiredFiles = [
   "src/utils/naverDirectionsUrl.js",
   "src/utils/drivingCommuteApi.js",
   "src/utils/odsayTransitApi.js",
+  "src/utils/walkingCommuteApi.js",
   "src/utils/commuteApiPolicy.js",
   "src/utils/geoJsonPolygon.js",
   "src/utils/cheonanAsanMapBounds.js",
@@ -61,6 +63,8 @@ const requiredFiles = [
   "tests/drivingApiActualOnly.test.mjs",
   "tests/drivingApiDiagnostics.test.mjs",
   "tests/odsayTransitApi.test.mjs",
+  "tests/walkingBatchApi.test.mjs",
+  "tests/walkingCommuteApi.test.mjs",
   "tests/commuteApiPolicy.test.mjs",
   "tests/mapFocusBehavior.test.mjs",
   "tests/naverDirectionsUrl.test.mjs",
@@ -86,11 +90,14 @@ const commuteScoring = await readFile(new URL("../src/utils/commuteScoring.js", 
 const riHighlights = await readFile(new URL("../src/utils/riHighlights.js", import.meta.url), "utf8");
 const drivingCommuteApi = await readFile(new URL("../src/utils/drivingCommuteApi.js", import.meta.url), "utf8");
 const odsayTransitApi = await readFile(new URL("../src/utils/odsayTransitApi.js", import.meta.url), "utf8");
+const walkingCommuteApi = await readFile(new URL("../src/utils/walkingCommuteApi.js", import.meta.url), "utf8");
 const commuteApiPolicy = await readFile(new URL("../src/utils/commuteApiPolicy.js", import.meta.url), "utf8");
 const drivingApiCore = await readFile(new URL("../api/commute/_driving-core.js", import.meta.url), "utf8");
 const drivingApiRoute = await readFile(new URL("../api/commute/driving.js", import.meta.url), "utf8");
 const drivingBatchApiRoute = await readFile(new URL("../api/commute/driving-batch.js", import.meta.url), "utf8");
+const walkingBatchApiRoute = await readFile(new URL("../api/commute/walking-batch.js", import.meta.url), "utf8");
 const vercelDirectionsSetup = await readFile(new URL("../docs/vercel-directions-setup.md", import.meta.url), "utf8");
+const envExample = await readFile(new URL("../.env.example", import.meta.url), "utf8");
 const cheonanAsanMapBounds = await readFile(new URL("../src/utils/cheonanAsanMapBounds.js", import.meta.url), "utf8");
 const naverDirectionsUrl = await readFile(new URL("../src/utils/naverDirectionsUrl.js", import.meta.url), "utf8");
 const publicConfigIndex = indexHtml.indexOf("./public-config.js");
@@ -158,9 +165,19 @@ if (publicConfig.includes("NAVER_MAP_CLIENT_SECRET")) {
   throw new Error("public-config.js must not contain NAVER_MAP_CLIENT_SECRET.");
 }
 
+if (publicConfig.includes("TMAP_PEDESTRIAN_APP_KEY")) {
+  throw new Error("public-config.js must not contain TMAP_PEDESTRIAN_APP_KEY.");
+}
+
 await assertFilesDoNotContain(
   await collectFiles(new URL("../src/", import.meta.url)),
   "NAVER_MAP_CLIENT_SECRET",
+  "src"
+);
+
+await assertFilesDoNotContain(
+  await collectFiles(new URL("../src/", import.meta.url)),
+  "TMAP_PEDESTRIAN_APP_KEY",
   "src"
 );
 
@@ -194,7 +211,38 @@ if (
   throw new Error("odsayTransitApi.js must normalize ODsay success/failure without fallback transit minutes.");
 }
 
-if (!commuteApiPolicy.includes("shouldFetchDrivingCommute") || !commuteApiPolicy.includes("shouldFetchOdsayTransit")) {
+if (
+  !walkingBatchApiRoute.includes("TMAP_PEDESTRIAN_APP_KEY") ||
+  !walkingBatchApiRoute.includes("TMAP_PEDESTRIAN_BASE_URL") ||
+  !walkingBatchApiRoute.includes("appKey") ||
+  !walkingBatchApiRoute.includes("version") ||
+  !walkingBatchApiRoute.includes("WGS84GEO") ||
+  !walkingBatchApiRoute.includes("MISSING_TMAP_WALK_ENV") ||
+  !walkingBatchApiRoute.includes("TMAP_WALK_PARSE_FAILED") ||
+  !walkingBatchApiRoute.includes("durationMinutes: null") ||
+  !walkingBatchApiRoute.includes("isActualApiValue: false")
+) {
+  throw new Error("walking-batch.js must call TMAP pedestrian safely and normalize failures without fallback walk minutes.");
+}
+
+if (
+  !walkingCommuteApi.includes("fetchWalkingCommuteBatch") ||
+  !walkingCommuteApi.includes("applyWalkingCommuteResultToTimes") ||
+  !walkingCommuteApi.includes("durationMinutes: null") ||
+  !walkingCommuteApi.includes("/api/commute/walking-batch")
+) {
+  throw new Error("walkingCommuteApi.js must fetch walking-batch and keep failed walking values unavailable.");
+}
+
+if (!envExample.includes("TMAP_PEDESTRIAN_BASE_URL") || !envExample.includes("TMAP_PEDESTRIAN_APP_KEY")) {
+  throw new Error(".env.example must document TMAP pedestrian environment placeholders.");
+}
+
+if (
+  !commuteApiPolicy.includes("shouldFetchDrivingCommute") ||
+  !commuteApiPolicy.includes("shouldFetchOdsayTransit") ||
+  !commuteApiPolicy.includes("shouldFetchWalkingCommute")
+) {
   throw new Error("commuteApiPolicy.js must separate selected commute-mode API calls.");
 }
 
@@ -279,12 +327,18 @@ if (!drivingCommuteApi.includes("fetchDrivingCommuteBatch") || !appJs.includes("
 
 if (
   !appJs.includes("fetchOdsayTransitCommutes") ||
+  !appJs.includes("fetchWalkingCommuteBatch") ||
   !appJs.includes("shouldFetchDrivingCommute") ||
   !appJs.includes("shouldFetchOdsayTransit") ||
+  !appJs.includes("shouldFetchWalkingCommute") ||
   !appJs.includes("isCalculating") ||
   !appJs.includes("ODsay 대중교통 기준")
 ) {
   throw new Error("app.js must fetch only the selected commute API and show loading/ODsay transit status.");
+}
+
+if (!appJs.includes("TMAP") || !appJs.includes("도보 경로")) {
+  throw new Error("app.js must show TMAP walking success/failure status for walk mode.");
 }
 
 if (
@@ -296,6 +350,10 @@ if (
   !commutePreselection.includes("SHORTLIST_LIMITS")
 ) {
   throw new Error("app.js must preselect commute API targets from proxy-scored candidates before external calls.");
+}
+
+if (!commutePreselection.includes("walk") || !commutePreselection.includes("low: 8")) {
+  throw new Error("commutePreselection.js must limit walk TMAP calls to shortlist plus not-recommended candidates.");
 }
 
 if (

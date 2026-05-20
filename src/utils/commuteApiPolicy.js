@@ -18,6 +18,10 @@ export function shouldFetchOdsayTransit(mode) {
   return normalizeCommuteApiMode(mode) === COMMUTE_API_MODES.transit;
 }
 
+export function shouldFetchWalkingCommute(mode) {
+  return normalizeCommuteApiMode(mode) === COMMUTE_API_MODES.walk;
+}
+
 export function shouldFetchExternalCommuteApi(mode) {
-  return shouldFetchDrivingCommute(mode) || shouldFetchOdsayTransit(mode);
+  return shouldFetchDrivingCommute(mode) || shouldFetchOdsayTransit(mode) || shouldFetchWalkingCommute(mode);
 }

@@ -24,11 +24,13 @@ import {
   fetchOdsayTransitCommutes,
   getConfiguredOdsayUriApiKey
 } from "../utils/odsayTransitApi.js";
+import { fetchWalkingCommuteBatch } from "../utils/walkingCommuteApi.js";
 import {
   DEFAULT_COMMUTE_API_MODE,
   normalizeCommuteApiMode,
   shouldFetchDrivingCommute,
-  shouldFetchOdsayTransit
+  shouldFetchOdsayTransit,
+  shouldFetchWalkingCommute
 } from "../utils/commuteApiPolicy.js";
 import { buildCommuteApiPreselection } from "../utils/commutePreselection.js";
 import { NaverMapView } from "./NaverMapView.js";
@@ -193,6 +195,7 @@ function getCalculationLoadingText() {
   const commuteMode = getEffectiveCommuteMode();
   if (commuteMode === "car") return "네이버 길찾기 기준 계산 중...";
   if (commuteMode === "transit") return "ODsay 대중교통 기준 계산 중...";
+  if (commuteMode === "walk") return "TMAP 보행자 경로 기준 계산 중...";
   return "생활권 계산 중...";
 }
 
@@ -552,6 +555,7 @@ function renderCommuteSummaryCard(zone, workplace) {
 function getSelectedCommuteSummary(commute) {
   const isCarMode = commute.commuteMode === "car";
   const isTransitMode = commute.commuteMode === "transit";
+  const isWalkMode = commute.commuteMode === "walk";
 
   if (isCarMode && !commute.isDrivingActualApiValue) {
     return {
@@ -567,6 +571,13 @@ function getSelectedCommuteSummary(commute) {
     };
   }
 
+  if (isWalkMode && !commute.isWalkingActualApiValue) {
+    return {
+      title: "도보 경로 정보 없음",
+      meta: `희망 ${commute.targetMinutes}분 · 통근 조건 미반영`
+    };
+  }
+
   return {
     title: `${commute.commuteModeLabel} 약 ${formatMinutes(commute.actualMinutes)}분`,
     meta: `${commute.feasibilityLabel ?? commute.statusLabel} · 희망 ${commute.targetMinutes}분 · ${getSelectedCommuteSourceLabel(commute)}`
@@ -576,15 +587,14 @@ function getSelectedCommuteSummary(commute) {
 function getSelectedCommuteSourceLabel(commute) {
   if (commute.commuteMode === "car") return "네이버 길찾기 기준";
   if (commute.commuteMode === "transit") return "ODsay 대중교통 기준";
+  if (commute.commuteMode === "walk") return "TMAP 보행자 경로 기준";
   return "거리 기반 추정";
 }
 
 function renderSelectedCommuteTimeItem(commute) {
   if (commute.commuteMode === "car") return renderCarCommuteTimeItem(commute);
   if (commute.commuteMode === "transit") return renderTransitCommuteTimeItem(commute);
-  if (commute.commuteMode === "walk") {
-    return `<span>도보 약 ${formatMinutes(commute.commuteTimes.walk)}분<small>거리 기반 추정</small></span>`;
-  }
+  if (commute.commuteMode === "walk") return renderWalkingCommuteTimeItem(commute);
 
   return `<span>${commute.commuteModeLabel} 약 ${formatMinutes(commute.actualMinutes)}분<small>거리 기반 추정</small></span>`;
 }
@@ -613,7 +623,9 @@ function renderSelectedMarkerCommuteLine(commute) {
       : `<span>대중교통 경로 정보 없음</span>`;
   }
   if (commute.commuteMode === "walk") {
-    return `<span>도보 약 ${formatMinutes(commute.commuteTimes.walk)}분</span>`;
+    return commute.isWalkingActualApiValue
+      ? `<span>도보 약 ${formatMinutes(commute.commuteTimes.walk)}분</span>`
+      : `<span>도보 경로 정보 없음</span>`;
   }
   return `<span>${commute.commuteModeLabel} 약 ${formatMinutes(commute.actualMinutes)}분</span>`;
 }
@@ -639,9 +651,18 @@ function renderTransitCommuteTimeItem(commute) {
   return `<span class="is-unavailable">대중교통 경로 불러오기 실패</span>`;
 }
 
+function renderWalkingCommuteTimeItem(commute) {
+  if (commute.isWalkingActualApiValue) {
+    return `<span>도보 약 ${formatMinutes(commute.commuteTimes.walk)}분<small>TMAP 보행자 경로 기준</small></span>`;
+  }
+
+  return `<span class="is-unavailable">도보 경로 불러오기 실패</span>`;
+}
+
 function renderSelectedCommuteStatus(commute) {
   if (commute.commuteMode === "car") return renderDrivingCommuteStatus(commute);
   if (commute.commuteMode === "transit") return renderTransitCommuteStatus(commute);
+  if (commute.commuteMode === "walk") return renderWalkingCommuteStatus(commute);
   return "";
 }
 
@@ -671,6 +692,19 @@ function renderTransitCommuteStatus(commute) {
     <p class="commute-api-status is-failed">
       ${commute.transitMessage ?? "대중교통 경로 불러오기 실패"}
       <small>${getTransitCommuteDebugText(commute)}</small>
+    </p>
+  `;
+}
+
+function renderWalkingCommuteStatus(commute) {
+  if (commute.isWalkingActualApiValue) {
+    return `<p class="commute-api-status is-success">도보 통근시간은 TMAP 보행자 경로 기준입니다.</p>`;
+  }
+
+  return `
+    <p class="commute-api-status is-failed">
+      ${commute.walkingMessage ?? "도보 경로를 불러오지 못했습니다."}
+      <small>${getWalkingCommuteDebugText(commute)}</small>
     </p>
   `;
 }
@@ -719,6 +753,37 @@ function getTransitCommuteDebugText(commute = {}) {
   }
 
   return "통근 조건은 대중교통 실제 경로 기준으로 반영되지 않았습니다.";
+}
+
+function getWalkingCommuteDebugText(commute = {}) {
+  if (commute.walkingErrorCode === "MISSING_TMAP_WALK_ENV") {
+    return "Vercel의 TMAP 도보 appKey 등록과 재배포가 필요합니다.";
+  }
+
+  if (
+    commute.walkingErrorCode === "TMAP_WALK_AUTH_FAILED" ||
+    commute.walkingErrorCode === "TMAP_WALK_FORBIDDEN"
+  ) {
+    return "TMAP appKey 권한을 확인해주세요.";
+  }
+
+  if (commute.walkingErrorCode === "TMAP_WALK_RATE_LIMITED") {
+    return "TMAP 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
+  }
+
+  if (commute.walkingErrorCode === "TMAP_WALK_INVALID_COORDINATES") {
+    return "도보 경로 좌표를 확인해주세요.";
+  }
+
+  if (commute.walkingErrorCode === "TMAP_WALK_NO_ROUTE") {
+    return "TMAP 도보 경로를 찾지 못했습니다.";
+  }
+
+  if (commute.walkingErrorCode) {
+    return `오류 코드: ${commute.walkingErrorCode}`;
+  }
+
+  return "통근 조건은 도보 실제 경로 기준으로 반영되지 않았습니다.";
 }
 
 function renderNaverDirectionsLink(zone, workplace) {
@@ -1019,6 +1084,18 @@ async function attachSelectedCommuteApiResultsIfNeeded(baseScoredZones, selected
     return baseScoredZones.map((zone) => ({
       ...zone,
       transitCommute: transitCommuteByZoneId.get(zone.id) ?? null
+    }));
+  }
+
+  if (shouldFetchWalkingCommute(commuteMode)) {
+    const walkingCommuteByZoneId = await fetchWalkingCommuteBatch({
+      start: selectedWorkplace,
+      lifeZones: safeApiTargetZones
+    });
+
+    return baseScoredZones.map((zone) => ({
+      ...zone,
+      walkingCommute: walkingCommuteByZoneId.get(zone.id) ?? null
     }));
   }
 

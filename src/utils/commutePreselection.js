@@ -19,9 +19,9 @@ const SHORTLIST_LIMITS = {
     high: 12
   },
   walk: {
-    low: 0,
-    medium: 0,
-    high: 0
+    low: 8,
+    medium: 9,
+    high: 10
   }
 };
 
@@ -239,9 +239,6 @@ function buildApiTargetZones({
   recommendationShortlist = [],
   notRecommendedZone = null
 } = {}) {
-  const mode = normalizeCommuteApiMode(commuteMode);
-  if (mode === "walk") return [];
-
   const notRecommendedZoneId = notRecommendedZone?.id ?? null;
   const targets = [];
   addUniqueZones(targets, recommendationShortlist);
