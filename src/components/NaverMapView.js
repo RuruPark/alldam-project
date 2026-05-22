@@ -43,11 +43,10 @@ export async function NaverMapView({
     const naver = await loadNaverMapScript(clientId);
     const maps = naver.maps;
     const allowedBounds = getCheonanAsanMapBounds();
-    const filteredResults = filterCheonanAsanMapResults(results);
-    const centerPoint = clampPointToBounds(
-      normalizePoint(workplace) ?? getBoundsCenter(allowedBounds),
-      allowedBounds
-    ) ?? DEFAULT_CENTER;
+    const boundaryFeatures = getAllBoundaryFeatures();
+    const renderPlan = createNaverMapRenderPlan({ workplace, results, boundaryFeatures });
+    const filteredResults = renderPlan.filteredResults;
+    const centerPoint = getNaverMapInitialCenter({ workplace, results: filteredResults, allowedBounds });
     const map = new maps.Map(container, {
       center: new maps.LatLng(centerPoint.lat, centerPoint.lng),
       zoom: 10,
@@ -60,13 +59,13 @@ export async function NaverMapView({
     });
     const overlays = [];
     const cleanupHandlers = [];
-    const boundaryFeatures = getAllBoundaryFeatures();
 
     overlays.push(...createOutsideMaskPolygons({ maps, map, bounds: allowedBounds }));
+    overlays.push(...createBaseBoundaryPolygons({ maps, map, boundaryFeatures }));
     applyMapBoundsGuard({ maps, map, bounds: allowedBounds, cleanupHandlers });
 
-    if (workplace) {
-      const workplacePoint = normalizePoint(workplace);
+    if (renderPlan.hasWorkplace) {
+      const workplacePoint = renderPlan.workplacePoint;
 
       if (workplacePoint) {
         overlays.push(createMarker({
@@ -81,7 +80,7 @@ export async function NaverMapView({
       }
     }
 
-    const workplacePoint = normalizePoint(workplace);
+    const workplacePoint = renderPlan.workplacePoint;
     const bounds = new maps.LatLngBounds();
     let boundsPointCount = 0;
 
@@ -190,6 +189,37 @@ export async function NaverMapView({
   }
 }
 
+export function createNaverMapRenderPlan({ workplace, results = [], boundaryFeatures = [] } = {}) {
+  const workplacePoint = normalizePoint(workplace);
+  const filteredResults = filterCheonanAsanMapResults(Array.isArray(results) ? results : []);
+  const resultPoints = filteredResults
+    .map((lifeZone) => normalizePoint(lifeZone))
+    .filter(Boolean);
+  const safeBoundaryFeatures = Array.isArray(boundaryFeatures) ? boundaryFeatures : [];
+
+  return {
+    hasWorkplace: Boolean(workplacePoint),
+    workplacePoint,
+    filteredResults,
+    resultPoints,
+    boundaryFeatureCount: safeBoundaryFeatures.length,
+    shouldRenderBaseBoundaries: safeBoundaryFeatures.length > 0
+  };
+}
+
+export function getNaverMapInitialCenter({ workplace, results = [], allowedBounds = getCheonanAsanMapBounds() } = {}) {
+  const resultCenter = getPointCollectionCenter(
+    (Array.isArray(results) ? results : [])
+      .map((lifeZone) => normalizePoint(lifeZone))
+      .filter(Boolean)
+  );
+
+  return clampPointToBounds(
+    normalizePoint(workplace) ?? resultCenter ?? getBoundsCenter(allowedBounds),
+    allowedBounds
+  ) ?? DEFAULT_CENTER;
+}
+
 function focusLifeZoneOnMap({ maps, map, lifeZone, boundaryFeatures }) {
   const focusTarget = getLifeZoneFocusTarget(lifeZone, boundaryFeatures);
 
@@ -230,6 +260,46 @@ export function getLifeZoneFocusTarget(lifeZone, boundaryFeatures = []) {
       center
     }
     : null;
+}
+
+function getPointCollectionCenter(points = []) {
+  const safePoints = points.filter((point) => (
+    Number.isFinite(Number(point?.lat)) &&
+    Number.isFinite(Number(point?.lng))
+  ));
+
+  if (safePoints.length === 0) return null;
+
+  const total = safePoints.reduce((acc, point) => ({
+    lat: acc.lat + Number(point.lat),
+    lng: acc.lng + Number(point.lng)
+  }), { lat: 0, lng: 0 });
+
+  return {
+    lat: total.lat / safePoints.length,
+    lng: total.lng / safePoints.length
+  };
+}
+
+function createBaseBoundaryPolygons({ maps, map, boundaryFeatures = [] }) {
+  const overlays = [];
+  const safeFeatures = Array.isArray(boundaryFeatures) ? boundaryFeatures : [];
+
+  safeFeatures.forEach((feature) => {
+    addBoundaryPolygons({
+      maps,
+      map,
+      bounds: null,
+      overlays,
+      feature,
+      variant: "base",
+      isSelected: false,
+      includeInBounds: false,
+      clickable: false
+    });
+  });
+
+  return overlays;
 }
 
 function createOutsideMaskPolygons({ maps, map, bounds }) {
@@ -345,7 +415,18 @@ function createFeatureLatLngBounds(maps, feature) {
   return pointCount > 0 ? bounds : null;
 }
 
-function addBoundaryPolygons({ maps, map, bounds, overlays, feature, variant, isSelected, onClick }) {
+function addBoundaryPolygons({
+  maps,
+  map,
+  bounds,
+  overlays,
+  feature,
+  variant,
+  isSelected,
+  onClick,
+  includeInBounds = true,
+  clickable = Boolean(onClick)
+}) {
   try {
     const rings = normalizeGeoJsonGeometryToRings(feature.geometry);
     let pointCount = 0;
@@ -355,7 +436,8 @@ function addBoundaryPolygons({ maps, map, bounds, overlays, feature, variant, is
       const polygon = new maps.Polygon({
         map,
         paths: path,
-        ...getBoundaryStyle(variant, isSelected)
+        ...getBoundaryStyle(variant, isSelected),
+        clickable
       });
 
       if (onClick) {
@@ -363,7 +445,9 @@ function addBoundaryPolygons({ maps, map, bounds, overlays, feature, variant, is
       }
 
       path.forEach((latLng) => {
-        bounds.extend(latLng);
+        if (includeInBounds && bounds) {
+          bounds.extend(latLng);
+        }
         pointCount += 1;
       });
       overlays.push(polygon);
@@ -434,23 +518,29 @@ function findSupplementalCenter(target = {}, emdName = "") {
 
 function getBoundaryStyle(variant, isSelected) {
   const styleByVariant = {
+    base: {
+      strokeColor: "#5f7f77",
+      fillColor: "#147d72",
+      fillOpacity: 0.025,
+      zIndex: 2
+    },
     workplace: {
       strokeColor: "#273a66",
       fillColor: "#273a66",
       fillOpacity: 0.13,
-      zIndex: 5
+      zIndex: 6
     },
     recommended: {
       strokeColor: "#147d72",
       fillColor: "#147d72",
       fillOpacity: 0.09,
-      zIndex: 3
+      zIndex: 5
     },
     low: {
       strokeColor: "#9d6b5f",
       fillColor: "#dd6b4d",
       fillOpacity: 0.07,
-      zIndex: 2
+      zIndex: 4
     }
   };
   const style = styleByVariant[variant] ?? styleByVariant.recommended;
@@ -467,8 +557,10 @@ function getBoundaryStyle(variant, isSelected) {
 }
 
 function normalizePoint(point = {}) {
-  const lat = Number(point.lat ?? point.centerLat);
-  const lng = Number(point.lng ?? point.centerLng);
+  if (!point || typeof point !== "object") return null;
+
+  const lat = Number(point.lat ?? point.centerLat ?? point.latitude ?? point.coordinate?.lat);
+  const lng = Number(point.lng ?? point.centerLng ?? point.longitude ?? point.coordinate?.lng);
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   return { lat, lng };

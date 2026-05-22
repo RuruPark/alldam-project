@@ -319,6 +319,14 @@ if (!naverMapView.includes("createOutsideMaskPolygons") || !naverMapView.include
   throw new Error("NaverMapView.js must mask outside Cheonan-Asan and filter map results.");
 }
 
+if (
+  !naverMapView.includes("createNaverMapRenderPlan") ||
+  !naverMapView.includes("createBaseBoundaryPolygons") ||
+  !naverMapView.includes("getNaverMapInitialCenter")
+) {
+  throw new Error("NaverMapView.js must keep base boundaries and map fallback center in infrastructure-only mode.");
+}
+
 if (!cheonanAsanMapBounds.includes("doBoundsIntersect") || !cheonanAsanMapBounds.includes("shouldRestoreToCheonanAsan")) {
   throw new Error("cheonanAsanMapBounds.js must detect full viewport departure from Cheonan-Asan.");
 }
