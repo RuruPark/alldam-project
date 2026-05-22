@@ -321,10 +321,14 @@ if (!naverMapView.includes("createOutsideMaskPolygons") || !naverMapView.include
 
 if (
   !naverMapView.includes("createNaverMapRenderPlan") ||
-  !naverMapView.includes("createBaseBoundaryPolygons") ||
+  !naverMapView.includes("filterBoundaryFeaturesForRecommendations") ||
   !naverMapView.includes("getNaverMapInitialCenter")
 ) {
-  throw new Error("NaverMapView.js must keep base boundaries and map fallback center in infrastructure-only mode.");
+  throw new Error("NaverMapView.js must keep recommendation boundaries and map fallback center in infrastructure-only mode.");
+}
+
+if (naverMapView.includes("createBaseBoundaryPolygons")) {
+  throw new Error("NaverMapView.js must not render the full 48 EMD boundary layer as a map fallback.");
 }
 
 if (!cheonanAsanMapBounds.includes("doBoundsIntersect") || !cheonanAsanMapBounds.includes("shouldRestoreToCheonanAsan")) {

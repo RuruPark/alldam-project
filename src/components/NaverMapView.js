@@ -61,7 +61,6 @@ export async function NaverMapView({
     const cleanupHandlers = [];
 
     overlays.push(...createOutsideMaskPolygons({ maps, map, bounds: allowedBounds }));
-    overlays.push(...createBaseBoundaryPolygons({ maps, map, boundaryFeatures }));
     applyMapBoundsGuard({ maps, map, bounds: allowedBounds, cleanupHandlers });
 
     if (renderPlan.hasWorkplace) {
@@ -83,23 +82,14 @@ export async function NaverMapView({
     const workplacePoint = renderPlan.workplacePoint;
     const bounds = new maps.LatLngBounds();
     let boundsPointCount = 0;
+    const recommendationBoundaryKeys = new Set(
+      renderPlan.recommendationBoundaryFeatures.map((feature) => getBoundaryFeatureStableKey(feature))
+    );
+    const renderedBoundaryKeys = new Set();
 
     if (workplacePoint) {
       bounds.extend(new maps.LatLng(workplacePoint.lat, workplacePoint.lng));
       boundsPointCount += 1;
-
-      const workplaceBoundaryFeature = findBoundaryFeatureForTarget(boundaryFeatures, workplace);
-      if (workplaceBoundaryFeature) {
-        boundsPointCount += addBoundaryPolygons({
-          maps,
-          map,
-          bounds,
-          overlays,
-          feature: workplaceBoundaryFeature,
-          variant: "workplace",
-          isSelected: true
-        });
-      }
     }
 
     filteredResults.forEach((lifeZone, index) => {
@@ -110,8 +100,16 @@ export async function NaverMapView({
       const isSelected = lifeZone.id === selectedLifeZoneId;
       const rankLabel = getRankLabel(lifeZone, index);
       const lifeZoneBoundaryFeature = findBoundaryFeatureForTarget(boundaryFeatures, lifeZone);
+      const lifeZoneBoundaryKey = lifeZoneBoundaryFeature
+        ? getBoundaryFeatureStableKey(lifeZoneBoundaryFeature)
+        : "";
 
-      if (lifeZoneBoundaryFeature) {
+      if (
+        lifeZoneBoundaryFeature &&
+        recommendationBoundaryKeys.has(lifeZoneBoundaryKey) &&
+        !renderedBoundaryKeys.has(lifeZoneBoundaryKey)
+      ) {
+        renderedBoundaryKeys.add(lifeZoneBoundaryKey);
         boundsPointCount += addBoundaryPolygons({
           maps,
           map,
@@ -160,12 +158,12 @@ export async function NaverMapView({
 
     const allowedLatLngBounds = createLatLngBounds(maps, allowedBounds);
 
-    if (allowedLatLngBounds) {
-      map.fitBounds(allowedLatLngBounds);
-    } else if (boundsPointCount > 1) {
+    if (boundsPointCount > 1) {
       map.fitBounds(bounds);
     } else if (boundsPointCount === 1) {
       map.setCenter(bounds.getCenter());
+    } else if (allowedLatLngBounds) {
+      map.fitBounds(allowedLatLngBounds);
     }
 
     if (focusSelectedLifeZone) {
@@ -196,6 +194,10 @@ export function createNaverMapRenderPlan({ workplace, results = [], boundaryFeat
     .map((lifeZone) => normalizePoint(lifeZone))
     .filter(Boolean);
   const safeBoundaryFeatures = Array.isArray(boundaryFeatures) ? boundaryFeatures : [];
+  const recommendationBoundaryFeatures = filterBoundaryFeaturesForRecommendations(
+    safeBoundaryFeatures,
+    filteredResults
+  );
 
   return {
     hasWorkplace: Boolean(workplacePoint),
@@ -203,8 +205,45 @@ export function createNaverMapRenderPlan({ workplace, results = [], boundaryFeat
     filteredResults,
     resultPoints,
     boundaryFeatureCount: safeBoundaryFeatures.length,
-    shouldRenderBaseBoundaries: safeBoundaryFeatures.length > 0
+    recommendationBoundaryFeatures,
+    recommendationBoundaryFeatureCount: recommendationBoundaryFeatures.length,
+    shouldRenderRecommendationBoundaries: recommendationBoundaryFeatures.length > 0
   };
+}
+
+export function getRecommendationBoundaryKeys(results = []) {
+  const keys = [];
+  const seen = new Set();
+  const safeResults = Array.isArray(results) ? results : [];
+
+  safeResults.forEach((result) => {
+    const key = getBoundaryTargetStableKey(normalizeBoundaryTarget(result));
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    keys.push(key);
+  });
+
+  return keys;
+}
+
+export function filterBoundaryFeaturesForRecommendations(boundaryFeatures = [], recommendationResults = []) {
+  const safeFeatures = Array.isArray(boundaryFeatures) ? boundaryFeatures : [];
+  const safeResults = filterCheonanAsanMapResults(Array.isArray(recommendationResults) ? recommendationResults : []);
+  const matchedFeatures = [];
+  const seenFeatureKeys = new Set();
+
+  safeResults.forEach((result) => {
+    const feature = findBoundaryFeatureForTarget(safeFeatures, result);
+    if (!feature) return;
+
+    const featureKey = getBoundaryFeatureStableKey(feature);
+    if (!featureKey || seenFeatureKeys.has(featureKey)) return;
+
+    seenFeatureKeys.add(featureKey);
+    matchedFeatures.push(feature);
+  });
+
+  return matchedFeatures;
 }
 
 export function getNaverMapInitialCenter({ workplace, results = [], allowedBounds = getCheonanAsanMapBounds() } = {}) {
@@ -279,27 +318,6 @@ function getPointCollectionCenter(points = []) {
     lat: total.lat / safePoints.length,
     lng: total.lng / safePoints.length
   };
-}
-
-function createBaseBoundaryPolygons({ maps, map, boundaryFeatures = [] }) {
-  const overlays = [];
-  const safeFeatures = Array.isArray(boundaryFeatures) ? boundaryFeatures : [];
-
-  safeFeatures.forEach((feature) => {
-    addBoundaryPolygons({
-      maps,
-      map,
-      bounds: null,
-      overlays,
-      feature,
-      variant: "base",
-      isSelected: false,
-      includeInBounds: false,
-      clickable: false
-    });
-  });
-
-  return overlays;
 }
 
 function createOutsideMaskPolygons({ maps, map, bounds }) {
@@ -502,6 +520,25 @@ export function normalizeBoundaryTarget(target = {}) {
   };
 }
 
+function getBoundaryFeatureStableKey(feature) {
+  return getBoundaryTargetStableKey(getFeatureIdentity(feature));
+}
+
+function getBoundaryTargetStableKey(target = {}) {
+  const emdCode = normalizeBoundaryKey(target.emdCode);
+  if (emdCode) return `code:${emdCode}`;
+
+  const city = normalizeBoundaryKey(target.city);
+  const district = normalizeBoundaryKey(target.district);
+  const emdName = normalizeBoundaryKey(target.emdName);
+
+  return emdName ? `name:${city}|${district}|${emdName}` : "";
+}
+
+function normalizeBoundaryKey(value) {
+  return String(value ?? "").trim().replace(/\s+/g, "");
+}
+
 function findSupplementalCenter(target = {}, emdName = "") {
   if (target.emdCode) {
     return findEmdCenter(target.emdCode);
@@ -518,12 +555,6 @@ function findSupplementalCenter(target = {}, emdName = "") {
 
 function getBoundaryStyle(variant, isSelected) {
   const styleByVariant = {
-    base: {
-      strokeColor: "#5f7f77",
-      fillColor: "#147d72",
-      fillOpacity: 0.025,
-      zIndex: 2
-    },
     workplace: {
       strokeColor: "#273a66",
       fillColor: "#273a66",
