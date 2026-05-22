@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import {
   buildInfraOnlyResultBundle,
   NO_WORKPLACE_ID,
+  NO_WORKPLACE_LABEL,
   normalizeWorkplaceEmdCode,
   RECOMMENDATION_MODES
 } from "../src/components/app.js";
@@ -12,10 +13,13 @@ const appSource = await readFile(new URL("../src/components/app.js", import.meta
 
 test("workplace none option uses a stable internal value", () => {
   assert.equal(NO_WORKPLACE_ID, "none");
+  assert.equal(NO_WORKPLACE_LABEL, "선택 안함");
   assert.equal(normalizeWorkplaceEmdCode("none"), NO_WORKPLACE_ID);
   assert.equal(normalizeWorkplaceEmdCode(""), NO_WORKPLACE_ID);
   assert.equal(normalizeWorkplaceEmdCode(null), NO_WORKPLACE_ID);
   assert.equal(normalizeWorkplaceEmdCode("NO_WORKPLACE"), NO_WORKPLACE_ID);
+  assert.equal(normalizeWorkplaceEmdCode("선택안함"), NO_WORKPLACE_ID);
+  assert.equal(normalizeWorkplaceEmdCode("선택 안함"), NO_WORKPLACE_ID);
   assert.equal(normalizeWorkplaceEmdCode("LZ_001"), "LZ_001");
 });
 
@@ -62,7 +66,10 @@ test("infraOnly empty state does not create commute API targets", () => {
 });
 
 test("infraOnly UI path exposes no workplace commute API calls or commute labels", () => {
-  assert.ok(appSource.includes("선택안함"));
+  assert.ok(appSource.includes("NO_WORKPLACE_LABEL"));
+  assert.ok(appSource.includes("data-workplace-none"));
+  assert.ok(appSource.includes("workplace-none-button"));
+  assert.ok(appSource.includes("value=\"${NO_WORKPLACE_ID}\""));
   assert.ok(appSource.includes("직장 위치를 선택하지 않으면 인프라 선호도만으로 생활권을 추천합니다."));
   assert.ok(appSource.includes("직장 위치를 선택하지 않아 통근 조건은 반영하지 않았습니다."));
   assert.ok(appSource.includes("finalApiTargetCount: 0"));

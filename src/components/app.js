@@ -103,6 +103,7 @@ const MAP_BOUNDS = {
 };
 
 export const NO_WORKPLACE_ID = "none";
+export const NO_WORKPLACE_LABEL = "선택 안함";
 
 export const RECOMMENDATION_MODES = Object.freeze({
   commuteBased: "commuteBased",
@@ -271,6 +272,18 @@ function renderWorkplaceCommuteSection() {
         <p>${modeLabel} · 상세 주소 대신 읍면동을 선택하면 추천 생활권과 직장 위치의 관계를 함께 보여줍니다.</p>
       </div>
 
+      <div class="workplace-none-row">
+        <button
+          class="workplace-none-button ${isInfraOnlyMode ? "is-selected" : ""}"
+          type="button"
+          data-workplace-none
+          aria-pressed="${isInfraOnlyMode}"
+        >
+          ${NO_WORKPLACE_LABEL}
+        </button>
+        <span>직장 위치 없이 인프라 선호도만으로 추천합니다.</span>
+      </div>
+
       <div class="form-grid">
         <label class="field-group" for="workplace-city">
           <span>시 선택</span>
@@ -291,7 +304,7 @@ function renderWorkplaceCommuteSection() {
         <label class="field-group" for="workplace-emd">
           <span>읍면동 선택</span>
           <select id="workplace-emd" data-workplace-emd aria-invalid="${!isInfraOnlyMode && !selectedWorkplace && Boolean(state.validationMessage)}">
-            <option value="${NO_WORKPLACE_ID}" ${isInfraOnlyMode ? "selected" : ""}>선택안함</option>
+            <option value="${NO_WORKPLACE_ID}" ${isInfraOnlyMode ? "selected" : ""}>${NO_WORKPLACE_LABEL}</option>
             ${emds.length === 0 ? `<option value="">선택 가능한 읍면동 없음</option>` : ""}
             ${emds.map((emd) => `
               <option value="${emd.emdCode}" ${emd.emdCode === selectedWorkplaceCode ? "selected" : ""}>${emd.emdName}</option>
@@ -907,7 +920,7 @@ function renderInfraOnlyReadout() {
       <div class="readout-grid">
         <div>
           <span>직장 위치</span>
-          <strong>선택안함</strong>
+          <strong>${NO_WORKPLACE_LABEL}</strong>
         </div>
         <div>
           <span>통근 조건</span>
@@ -1062,6 +1075,21 @@ function bindPreferenceEvents() {
 
     state.workplaceSelection = { city, district, emdCode: firstEmd?.emdCode ?? "" };
     state.commutePreference = { ...state.commutePreference, workplaceEmdCode: firstEmd?.emdCode ?? "" };
+    invalidatePendingCalculation();
+    state.validationMessage = "";
+    render();
+  });
+
+  appRoot.querySelector("[data-workplace-none]")?.addEventListener("click", () => {
+    state.workplaceSelection = {
+      ...state.workplaceSelection,
+      emdCode: NO_WORKPLACE_ID
+    };
+    state.commutePreference = {
+      ...state.commutePreference,
+      workplaceEmdCode: NO_WORKPLACE_ID
+    };
+    state.recommendationMode = RECOMMENDATION_MODES.infraOnly;
     invalidatePendingCalculation();
     state.validationMessage = "";
     render();
@@ -1468,7 +1496,12 @@ export function normalizeWorkplaceEmdCode(value) {
   const code = String(value ?? "").trim();
   if (!code) return NO_WORKPLACE_ID;
 
-  return code === NO_WORKPLACE_ID || code === "NO_WORKPLACE" ? NO_WORKPLACE_ID : code;
+  return code === NO_WORKPLACE_ID ||
+    code === "NO_WORKPLACE" ||
+    code === "선택안함" ||
+    code === NO_WORKPLACE_LABEL
+    ? NO_WORKPLACE_ID
+    : code;
 }
 
 function isNoWorkplaceCode(value) {

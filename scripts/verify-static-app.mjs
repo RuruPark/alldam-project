@@ -372,6 +372,8 @@ if (
 
 if (
   !appJs.includes("NO_WORKPLACE_ID") ||
+  !appJs.includes("NO_WORKPLACE_LABEL") ||
+  !appJs.includes("data-workplace-none") ||
   !appJs.includes("RECOMMENDATION_MODES.infraOnly") ||
   !appJs.includes("buildInfraOnlyResultBundle") ||
   !appJs.includes("finalApiTargetCount: 0") ||
